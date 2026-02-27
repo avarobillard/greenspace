@@ -1,0 +1,10 @@
+---
+title: "Blog post exploration"
+format: html
+---
+
+### Read in data
+```{r}
+
+```
+
