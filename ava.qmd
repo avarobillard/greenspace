@@ -92,14 +92,15 @@ Where each regression model included different health or safety outcome of inter
 sim_data <- sim_data |>
   group_by(lot_id) |>
   mutate(pre_mean = mean(crime_gun_assaults[post == 0])) |>
-  ungroup()
+  mutate(rel_year = year - greening_year) %>% 
+  ungroup() 
 ```
 
 ```{r}
 # Create model based on equation
 model <- feols(
-  crime_gun_assaults ~ post + treated_status + post:treated_status +     # B1, B2, B3
-                       section:year + section:pre_mean +   # B5
+  crime_gun_assaults ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
+                       section:pre_mean +   # B5
                        area_sqft + vacant_lot_density +    # lot covariates
                        unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
                        income_sqmi + black_sqmi +
@@ -108,6 +109,9 @@ model <- feols(
   data = sim_data,
   cluster = ~ contig_group_id # cluster ID
 )
+
+iplot(model, xlab = "Greening",
+      ylab = "Gun assaults")
 ```
 
 ```{r}
