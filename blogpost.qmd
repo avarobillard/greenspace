@@ -1,24 +1,32 @@
 ---
 title: "blogpost"
 format: html
+editor_options: 
+  chunk_output_type: inline
 ---
 
 The authors conducted a decade-long difference-in-differences analysis of the impact of a vacant lot greening program in Philadelphia, Pennsylvania, on health and safety outcomes. ‘‘Before’’ and ‘‘after’’ outcome differences among treated vacant lots were compared with matched groups of control vacant lots that were eligible but did not receive treatment.
 
 ```{r}
-#| message: FALSE
+#| message: false
+#| warning: false
+# 
 library(tidyverse)
 library(here)
 library(fixest)
 library(gtsummary)
 library(janitor)
+library(stringr)
+library(gt)
 ```
 
 ### Read in data
 
 ```{r}
-#| message: FALSE
+#| message: false
+#| warning: false
 
+# Read in simulated data
 sim_data <- read_csv(here("data", "branas2011_simulated_panel.csv")) %>%
   # Drop simulation-only helper variables
   select(-ends_with("_z")) %>% 
@@ -35,11 +43,11 @@ Unit of analysis: vacant-lot × year (panel). Each row is a lot-year observation
 
 #### What are the key outcome, treatment, and control variables?
 
-Treatment- PHS program to green abandoned vacant lots in Philadelphia- used consistent treatment protocol of removing trash and debris, grading the land, planting grass and trees to create a park-like setting, and installing low wooden posts around each lot's perimeter to show that this lot was cared for. PHS returned multiple times each year for basic maintenance.
+Treatment - PHS program to green abandoned vacant lots in Philadelphia- used consistent treatment protocol of removing trash and debris, grading the land, planting grass and trees to create a park-like setting, and installing low wooden posts around each lot's perimeter to show that this lot was cared for. PHS returned multiple times each year for basic maintenance.
 
 -\> DiD approach to consider health and safety outcomes occuring on/around vacant lots in PHS program before and after they were treated, as compared with matched control vacant lots over the same time period.
 
-Control- control lots from 2 eligibility pools were randomly selected and matched to treated lots at a 3:1 ratio by city section - vacant lots eligible to serve as controls included only those that had never bnen greened from 1999 to 2008 but could have been chosen by the PHS for greening.
+Control - control lots from 2 eligibility pools were randomly selected and matched to treated lots at a 3:1 ratio by city section - vacant lots eligible to serve as controls included only those that had never bnen greened from 1999 to 2008 but could have been chosen by the PHS for greening.
 
 The outcomes were various health and safety outcomes - health: high stress, high cholesterol, high blood pressure, low exercise, poor health status - crime: gun assaults, robberies, disorderly, and illegal dumping
 
@@ -57,87 +65,161 @@ Years: 1999–2008 (10 years). Lots: 17,744 total (4,436 treated; 13,308 matched
 
 ### 2. Annotated Replication
 
-### **Regression Model** $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}
-$$
+### **Regression Model** $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}$$
 
 Where each regression model included different health or safety outcome of interest, Yit:
 
--   i- number of vacant lots
+-   i - number of vacant lots
 
--   t- year of study
+-   t - year of study
 
 -   (it is a unit of observation)
 
--   Pit- pregreening-postgreening difference per vacant lot (main effect)- change from pre to post period for control group (Rit = 0)
+-   Pit - pregreening-postgreening difference per vacant lot (main effect)- change from pre to post period for control group (Rit = 0)
 
     -   pregreening yrs = 0, postgreening yrs = 1
 
--   Rit- treatment-control difference (main effect)- difference in intercept between treated + control groups at baseline during pre-period (Pit = 0)
+-   Rit - treatment-control difference (main effect)- difference in intercept between treated + control groups at baseline during pre-period (Pit = 0)
 
     -   control lots = 0, greened lots = 1
 
--   Pit x Rit- interaction term- allows for change in trend
+-   Pit x Rit - interaction term- allows for change in trend
 
--   Sit x t- fixed-effects city section x year interaction term to account for geographic variability and clustering over time
+-   Sit x t - fixed-effects city section x year interaction term to account for geographic variability and clustering over time
 
--   Sit x Mi- fixed effect city section x preperiod mean outcome interaction term to adjust for regression to the mean
+-   Sit x Mi - fixed effect city section x preperiod mean outcome interaction term to adjust for regression to the mean
 
--   Xit- series of p independent covariates (demographic variables, lot area, vacant lot clustering)
+-   Xit - series of p independent covariates (demographic variables, lot area, vacant lot clustering)
 
--   xi- lot fixed effects
+-   xi - lot fixed effects
 
--   Eit- residual error- group-level random effects parameter that adjusted for effects of individual vacant lots that were contiguous to one another
+-   Eit - residual error- group-level random effects parameter that adjusted for effects of individual vacant lots that were contiguous to one another
 
 ```{r}
+#| message: false
+#| warning: false
+
 # Lot-level average outcome during pre-greening period
-sim_data <- sim_data |>
-  group_by(lot_id) |>
-  mutate(pre_mean = mean(crime_gun_assaults[post == 0])) |>
+sim_data <- sim_data %>%
+  group_by(lot_id) %>%
+  mutate(pre_mean = mean(crime_gun_assaults[post == 0])) %>%
   mutate(rel_year = year - greening_year) %>% 
   ungroup() 
+
+baseline_lot <- sim_data %>%
+  filter(post == 0) %>%
+  group_by(lot_id) %>%
+  slice_min(year, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+baseline_lot %>%
+  select(treated, area_sqft, median_age, unemployed_sqmi,
+         college_sqmi, income_sqmi, black_sqmi, hispanic_sqmi, 
+         poverty_sqmi,vacant_lot_density) %>%
+  tbl_summary(by = treated, statistic = all_continuous() ~ "{mean} ({sd})")
 ```
 
 ```{r}
+# 1) long format
+did_long <- sim_data %>%
+  select(year, treated, greening_year,
+         crime_gun_assaults, crime_robberies, crime_vandalism,
+         crime_disorderly, crime_illegal_dumping,
+         health_high_stress, health_high_chol, health_high_bp,
+         health_low_exercise, health_poor_health) %>%
+  pivot_longer(cols = -c(year, treated, greening_year),
+               names_to = "outcome", values_to = "value")
+
+# 2) means by year × treated within outcome
+did_means <- did_long %>%
+  group_by(outcome, year, treated) %>%
+  summarize(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# 3) define a reference "treatment year" line (average greening year among treated)
+treat_year <- sim_data %>%
+  filter(treated == 1) %>%
+  summarize(avg_year = round(mean(greening_year, na.rm = TRUE))) %>%
+  pull(avg_year)
+
+# 4) rename the plot & graph
+facet_names <- c("crime_disorderly" = "Disorderly Conduct",
+                 "crime_gun_assaults" = "Gun Assaults",
+                 "crime_illegal_dumpin" = "Illegal Dumping",
+                 "crime_robberies" = "Robberies",
+                 "crime_vandalism" = "Vandalism",
+                 "health_high_bp" = "High Blood Pressure",
+                 "health_high_chol" = "High Cholesterol",
+                 "health_high_stress" = "High Stress",
+                 "health_low_exercise" = "Low Exercise",
+                 "health_poor_health" = "Poor General Health")
+
+ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  facet_wrap(~outcome, scales = "free_y",
+             labeller = as_labeller(facet_names)) +
+  labs(color = "Treated",
+       y = "Mean outcome",
+       title = "Difference-in-Differences across outcomes",
+       subtitle = "Dashed line = average greening year among treated lots") +
+  theme_minimal() +
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank())
+```
+
+```{r}
+#| message: false
+#| warning: false
+
 # Create model based on equation
-model <- feols(
-  crime_gun_assaults ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
-                       section:pre_mean +   # B5
-                       area_sqft + vacant_lot_density +    # lot covariates
-                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+model1 <- feols(
+  crime_gun_assaults ~ i(rel_year, treated_status, ref = -1) + # B1, B2, B3
+                       section:pre_mean + # B5
+                       area_sqft + vacant_lot_density + # lot covariates
+                       unemployed_sqmi + college_sqmi + # Baseline covariates
                        income_sqmi + black_sqmi +
                        hispanic_sqmi + poverty_sqmi + median_age |
-                       section^year,                        # B4- dummy variables section x yr 
+                       section^year, # B4 - dummy variables section x yr 
   data = sim_data,
-  cluster = ~ contig_group_id # cluster ID
-)
+  cluster = ~ contig_group_id) # cluster ID
 
-iplot(model, xlab = "Greening",
-      ylab = "Gun assaults")
+iplot(model1, xlab = "Greening",
+      ylab = "Gun Assaults",
+      main = "Event Study: Gun Assaults")
 ```
 
 ```{r}
-summary(model)
+#| message: false
+#| warning: false
+summary(model1)
 ```
 
 ```{r}
+#| message: false
+#| warning: false
+
 # Create model based on equation
 model2 <- feols(
-  health_high_chol ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
-                       section:pre_mean +   # B5
-                       area_sqft + vacant_lot_density +    # lot covariates
-                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+  health_high_chol ~ i(rel_year, treated_status, ref = -1) + # B1, B2, B3
+                       section:pre_mean + # B5
+                       area_sqft + vacant_lot_density + # lot covariates
+                       unemployed_sqmi + college_sqmi + # Baseline covariates 
                        income_sqmi + black_sqmi +
                        hispanic_sqmi + poverty_sqmi + median_age |
-                       section^year,                        # B4- dummy variables section x yr 
+                       section^year, # B4 - dummy variables section x yr 
   data = sim_data,
-  cluster = ~ contig_group_id # cluster ID
-)
+  cluster = ~ contig_group_id) # cluster ID
 
 iplot(model2, xlab = "Greening",
-      ylab = "High Chol")
+      ylab = "High Cholestrol",
+      main = "Event Study: High Cholestrol")
 ```
 
 ```{r}
+#| message: false
+#| warning: false
+
 summary(model2)
 ```
 
@@ -145,12 +227,44 @@ summary(model2)
 
 #### Causal identification: Is the identification strategy credible? What would have to be true for the estimates to be causal?
 
+The study and its replication indicate that the causal relationship appears reasonably credible overall. However, some measurements show less parallelism and lack significant statistical relevance in the post-treatment phase.
+
+The author also breaks down the analysis by regions in Philadelphia, revealing that some areas and categories seem to be more effective than others. This likely reflects local characteristics of the urban environment, such as neighborhood structure, density, and how residents actually use the greened spaces.
+
+In the results, crime outcomes appear stronger and more consistent, while health outcomes are relatively weaker. This makes sense, as health is influenced by many factors beyond the intervention. The study suggests that greening can clearly reduce crime, while the evidence for health improvements is less compelling.
+
+Some outcomes are more challenging to interpret. For instance, reports of disorderly incidents increase before treatment and even more after treatment. One possibility is that greening attracts more people to the area, leading to increased foot traffic and consequently more reported disorder, even if serious crime decreases. Meanwhile, outcomes related to low exercise seem to show more improvement.
+
 #### Statistical assumptions: Are key assumptions (parallel trends, exclusion restriction, etc.) tested or defended? Do you find the evidence convincing?
 
-Parallel trends assumption- 6 years pre-treatment...
+We observed that some pre-trends are slightly off, particularly in areas such as vandalism, disorderly conduct, and poor health.
+
+However, Our replicated trends mostly show parallel patterns for gun assaults, cholesterol levels, and several other outcomes. The event-study replication assesses the parallel trends assumption by checking whether treated and control areas had similar trends before the treatment took place.
+
+Overall, the evidence supporting the statistical assumptions is generally convincing, for them mostly fits the assumptions of parallel trends.
 
 #### Sampling & external validity: Who is in the sample? To whom can results be generalized?
 
+The sample consists of vacant lots in Philadelphia that were either treated with a greening intervention or used as control sites.
+
+These results might be applicable to similar greening programs. Urban contexts with similar vacancy patterns could provide helpful insights, but we believe it is challenging to generalize the results beyond these types of cities.
+
+While there are some indications of effects, such as a reduction in gun violence and improvements in cholesterol and blood pressure, at 95% of the confidence intervals for the estimated treatment effects across all health outcomes cross zero. Additionally, the findings related to crime are somewhat mixed.
+
+This suggests that while there may be some positive effects, the findings are not definitive and should be interpreted cautiously.
+
 #### Measurement: Are the outcome and treatment variables measured accurately and without systematic bias?
 
+Crime outcomes are likely measured relatively consistently because they rely on official crime reports. However, some outcomes such as vandalism and disorderly incidents may also reflect increased activity in the area. If greening attracts more people to use the space, there could be more opportunities for these events to occur or to be reported. There may also be some reporting bias depending on frequency of activities.
+
+However, we think that health outcomes are more difficult to interpret. The study itself discusses that health effects are weaker and harder to detect. It is difficult to clearly link greening directly to health outcomes because many other factors affect health.
+
+For example, self-reported poor health and high stress is a relatively weak measure. Blood pressure and cholesterol are more biologically direct indicators, but they can still be affected by many external influences. These outcomes are still influenced by factors such as diet, lifestyle, and access to healthcare, making it harder to attribute changes directly to the greening intervention.
+
 #### Other limitations: Anything else that affects how much weight you would put on the study’s conclusions?
+
+The separation of results by regions in Philadelphia still seems spectacle to us. While it makes sense to some extent since neighborhood context could influence how greening interventions are effective, the models already account for socioeconomic factors such as income and demographic variables. Therefore, it's not entirely clear how much additional insight the regional split provides.
+
+It feels somewhat like a stretch to interpret the data this way, although it's still plausible that neighborhood context affects the effectiveness of the interventions.
+
+Overall, the study offers evidence that greening vacant lots can reduce certain types of crime and improve health to some extent. However, the evidence regarding health outcomes is weaker, and conclusions should be drawn carefully. We believe that has to do with behavioural choices of health and lifestyle. Because of these factors, while the findings are suggestive and interesting, they should still be interpreted with caution.
