@@ -55,6 +55,93 @@ Years: 1999–2008 (10 years). Lots: 17,744 total (4,436 treated; 13,308 matched
 
 ### 2. Annotated Replication
 
+```{r}
+pre_data <- branas_data %>%
+  filter(post == 0)
+
+
+pre_data %>%
+  select(
+    treated,
+    area_sqft, median_age, unemployed_sqmi,
+    college_sqmi, income_sqmi,
+    black_sqmi, hispanic_sqmi, poverty_sqmi
+  ) %>%
+  tbl_summary(
+    by = treated,
+    statistic = all_continuous() ~ "{mean} ({sd})"
+  )
+```
+
+```{r}
+library(cobalt)
+
+bal.tab(
+  treated ~ area_sqft + median_age + unemployed_sqmi +
+    college_sqmi + income_sqmi +
+    black_sqmi + hispanic_sqmi + poverty_sqmi,
+  data = baseline_lot,
+  estimand = "ATT"
+)
+```
+
+```{r}
+love.plot(
+  treated ~ area_sqft + median_age + unemployed_sqmi +
+    college_sqmi + income_sqmi +
+    black_sqmi + hispanic_sqmi + poverty_sqmi,
+  data = baseline_lot,
+  thresholds = c(m = 0.1)
+)
+
+```
+
+```{r}
+ggplot(did_plot_data,
+       aes(x = year, y = mean_outcome, color = factor(treated))) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  labs(
+    color = "Treated",
+    y = "Mean Gun Assaults",
+    title = "Difference-in-Differences: Gun Assaults",
+    subtitle = "Pre vs Post comparison"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# make one for health outcome?
+ggplot(did_plot_data,
+       aes(x = year, y = mean_outcome, color = factor(treated))) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  labs(
+    color = "Treated",
+    y = "Mean Gun Assaults",
+    title = "Difference-in-Differences: Gun Assaults",
+    subtitle = "Pre vs Post comparison"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(did_means,
+       aes(x = year, y = mean_value, color = factor(treated))) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  facet_wrap(~outcome, scales = "free_y") +
+  labs(
+    color = "Treated",
+    y = "Mean outcome",
+    title = "Difference-in-Differences across outcomes"
+  ) +
+  theme_minimal()
+```
+
 **Regression Model**\
 $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}
 $$
@@ -112,4 +199,30 @@ model <- feols(
 
 iplot(model, xlab = "Greening",
       ylab = "Gun assaults")
+```
+
+```{r}
+summary(model)
+```
+
+```{r}
+# Create model based on equation
+model2 <- feols(
+  health_high_chol ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
+                       section:pre_mean +   # B5
+                       area_sqft + vacant_lot_density +    # lot covariates
+                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+                       income_sqmi + black_sqmi +
+                       hispanic_sqmi + poverty_sqmi + median_age |
+                       section^year,                        # B4- dummy variables section x yr 
+  data = sim_data,
+  cluster = ~ contig_group_id # cluster ID
+)
+
+iplot(model2, xlab = "Greening",
+      ylab = "High Chol")
+```
+
+```{r}
+summary(model2)
 ```
