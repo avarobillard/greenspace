@@ -1,0 +1,577 @@
+---
+title: "hw4_wlien"
+format: html
+editor: visual
+---
+
+# HW4 test run
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+You can add options to executable code like this
+
+```{r}
+library(tidyverse)
+library(here)
+library(fixest)
+library(gtsummary)
+library(janitor)
+library(jtools)
+library(plm)
+
+# for clustered SE + tidy output
+# install.packages(c("sandwich", "lmtest", "broom"))
+library(sandwich)
+library(lmtest)
+library(broom)
+```
+
+```{r}
+branas_data <- read_csv(here("branas2011_simulated_panel.csv"))
+
+glimpse(branas_data)
+```
+
+```{r}
+
+lm(crime_gun_assaults ~ treated * post, data = branas_data)
+
+
+```
+
+```{r}
+
+m_plm <- plm(
+  crime_gun_assaults ~ treated * post,
+  data = branas_data,
+  index = c("lot_id", "year"),
+  model = "within"
+)
+
+
+```
+
+```{r}
+pre_data <- branas_data %>%
+  filter(post == 0)
+
+
+pre_data %>%
+  select(
+    treated,
+    area_sqft, median_age, unemployed_sqmi,
+    college_sqmi, income_sqmi,
+    black_sqmi, hispanic_sqmi, poverty_sqmi
+  ) %>%
+  tbl_summary(
+    by = treated,
+    statistic = all_continuous() ~ "{mean} ({sd})"
+  )
+
+```
+
+```{r}
+
+baseline_lot <- branas_data %>%
+  filter(post == 0) %>%
+  group_by(lot_id) %>%
+  slice_min(year, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+glimpse(baseline_lot)
+
+```
+
+```{r}
+
+library(cobalt)
+
+bal.tab(
+  treated ~ area_sqft + median_age + unemployed_sqmi +
+    college_sqmi + income_sqmi +
+    black_sqmi + hispanic_sqmi + poverty_sqmi,
+  data = baseline_lot,
+  estimand = "ATT"
+)
+
+```
+
+```{r}
+
+love.plot(
+  treated ~ area_sqft + median_age + unemployed_sqmi +
+    college_sqmi + income_sqmi +
+    black_sqmi + hispanic_sqmi + poverty_sqmi,
+  data = baseline_lot,
+  thresholds = c(m = 0.1)
+)
+
+```
+
+```{r}
+
+pre_trend <- branas_data %>%
+  filter(post == 0)
+
+
+```
+
+```{r}
+
+
+pre_avg <- pre_trend %>%
+  group_by(year, treated) %>%
+  summarize(
+    mean_gun = mean(crime_gun_assaults, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+
+
+ggplot(pre_avg, aes(x = year, y = mean_gun, color = factor(treated))) +
+  geom_line(size = 1.2) +
+  geom_point() +
+  labs(
+    color = "Treated",
+    y = "Mean Gun Assaults",
+    title = "Pre-treatment Trends"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+
+
+lm(crime_gun_assaults ~ treated * year, data = pre_trend)
+
+```
+
+```{r}
+
+baseline_cov <- baseline_lot %>%
+  select(
+    lot_id,
+    area_sqft, median_age, unemployed_sqmi, college_sqmi, income_sqmi,
+    black_sqmi, hispanic_sqmi, poverty_sqmi, vacant_lot_density
+  )
+
+branas_panel <- branas_data %>%
+  select(-area_sqft, -median_age, -unemployed_sqmi, -college_sqmi, -income_sqmi,
+         -black_sqmi, -hispanic_sqmi, -poverty_sqmi, -vacant_lot_density) %>%
+  left_join(baseline_cov, by = "lot_id")
+
+
+```
+
+```{r}
+
+m1 <- lm(
+  crime_gun_assaults ~ treated * post +
+    area_sqft + median_age + unemployed_sqmi + college_sqmi + income_sqmi +
+    black_sqmi + hispanic_sqmi + poverty_sqmi + vacant_lot_density +
+    factor(section):factor(year),
+  data = branas_panel
+)
+
+# cluster-robust vcov (by contiguous-lot group)
+V1 <- vcovCL(m1, cluster = ~ contig_group_id, type = "HC1")
+
+# cluster-robust coefficient test
+coeftest(m1, vcov. = V1)
+
+
+```
+
+```{r}
+
+summ(m1, vcov = V1, model.fit = FALSE, digits = 3)
+
+
+```
+
+```{r}
+
+outcomes <- c(
+  "crime_gun_assaults",
+  "crime_robberies",
+  "crime_vandalism",
+  "crime_disorderly",
+  "crime_illegal_dumping",
+  "health_high_stress",
+  "health_high_chol",
+  "health_high_bp",
+  "health_low_exercise",
+  "health_poor_health"
+)
+
+
+```
+
+```{r}
+
+fit_one <- function(y) {
+  f <- as.formula(paste0(
+    y, " ~ treated * post + ",
+    "area_sqft + median_age + unemployed_sqmi + college_sqmi + income_sqmi + ",
+    "black_sqmi + hispanic_sqmi + poverty_sqmi + vacant_lot_density + ",
+    "factor(section):factor(year)"
+  ))
+  m <- lm(f, data = branas_panel)
+  V <- vcovCL(m, cluster = ~contig_group_id, type = "HC1")
+
+  tidy(m, vcov = V) %>%
+    filter(term == "treated:post") %>%
+    mutate(outcome = y)
+}
+
+did_tbl <- map_dfr(outcomes, fit_one) %>%
+  mutate(
+    conf.low = estimate - 1.96 * std.error,
+    conf.high = estimate + 1.96 * std.error
+  )
+did_tbl
+
+
+```
+
+```{r}
+
+fit_one <- function(y) {
+  f <- as.formula(paste0(
+    y, " ~ treated * post + ",
+    "area_sqft + median_age + unemployed_sqmi + college_sqmi + income_sqmi + ",
+    "black_sqmi + hispanic_sqmi + poverty_sqmi + vacant_lot_density + ",
+    "factor(section):factor(year)"
+  ))
+  m <- lm(f, data = branas_panel)
+  V <- vcovCL(m, cluster = ~contig_group_id, type = "HC1")
+
+  tidy(m, vcov = V) %>%
+    filter(term == "treated:post") %>%
+    mutate(outcome = y)
+}
+
+did_tbl <- map_dfr(outcomes, fit_one) %>%
+  mutate(
+    conf.low = estimate - 1.96 * std.error,
+    conf.high = estimate + 1.96 * std.error
+  )
+did_tbl
+
+
+```
+
+```{r}
+
+ggplot(did_tbl, aes(x = reorder(outcome, estimate), y = estimate)) +
+  geom_hline(yintercept = 0) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "DID estimate (treated × post)",
+    title = "Estimated treatment effects across outcomes",
+    subtitle = "Model: DID + section×year FE + baseline covariates; SE clustered by contig_group_id"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+branas_es <- branas_panel %>%
+  mutate(event_time = year - greening_year) %>%
+  filter(event_time >= -5, event_time <= 5)  # 你可改視窗
+
+
+```
+
+```{r}
+
+m_es <- lm(
+  crime_gun_assaults ~
+    factor(event_time) * treated +
+    area_sqft + median_age + unemployed_sqmi + college_sqmi + income_sqmi +
+    black_sqmi + hispanic_sqmi + poverty_sqmi + vacant_lot_density +
+    factor(section):factor(year),
+  data = branas_es
+)
+V_es <- vcovCL(m_es, cluster = ~contig_group_id, type = "HC1")
+
+es_tbl <- tidy(m_es, vcov = V_es) %>%
+  filter(str_detect(term, "^factor\\(event_time\\)")) %>%
+  filter(str_detect(term, ":treated$")) %>%
+  mutate(
+    event_time = as.integer(str_extract(term, "-?\\d+")),
+    conf.low = estimate - 1.96 * std.error,
+    conf.high = estimate + 1.96 * std.error
+  ) %>%
+  arrange(event_time)
+
+ggplot(es_tbl, aes(x = event_time, y = estimate)) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = -1, linetype = "dashed") +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(
+    x = "Event time (year - greening_year)",
+    y = "Effect relative to event_time = -1",
+    title = "Event-study: crime_gun_assaults",
+    subtitle = "Clustered SE by contig_group_id; with section×year FE + baseline covariates"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+
+did_tbl %>%
+  select(outcome, estimate, std.error, statistic, conf.low, conf.high)
+
+
+
+```
+
+```{r}
+
+nice_outcome <- c(
+  crime_gun_assaults    = "Gun assaults",
+  crime_robberies       = "Robberies",
+  crime_vandalism       = "Vandalism",
+  crime_disorderly      = "Disorderly conduct",
+  crime_illegal_dumping = "Illegal dumping",
+  health_high_stress    = "High stress (%)",
+  health_high_chol      = "High cholesterol (%)",
+  health_high_bp        = "High blood pressure (%)",
+  health_low_exercise   = "Low exercise (%)",
+  health_poor_health    = "Poor/Fair health (%)"
+)
+
+did_plot_df <- did_tbl %>%
+  mutate(outcome_label = recode(outcome, !!!nice_outcome))
+
+
+```
+
+```{r}
+
+ggplot(did_plot_df, aes(x = reorder(outcome_label, estimate), y = estimate)) +
+  geom_hline(yintercept = 0) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "DID estimate (treated × post)",
+    title = "Effect of vacant lot greening across outcomes",
+    subtitle = "DID + section×year FE + baseline covariates; SE clustered by contig_group_id"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+did_plot_df <- did_plot_df %>%
+  mutate(domain = if_else(str_detect(outcome, "^crime_"), "Crime", "Health"))
+
+ggplot(did_plot_df, aes(x = reorder(outcome_label, estimate), y = estimate)) +
+  geom_hline(yintercept = 0) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  coord_flip() +
+  facet_wrap(~domain, scales = "free_y") +
+  labs(
+    x = NULL,
+    y = "DID estimate (treated × post)",
+    title = "Effect of vacant lot greening: crime vs health outcomes",
+    subtitle = "SE clustered by contig_group_id; section×year FE; baseline covariates"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+did_plot_data <- branas_panel %>%
+  group_by(year, treated) %>%
+  summarize(
+    mean_outcome = mean(crime_gun_assaults, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+
+```
+
+```{r}
+
+treat_year <- branas_panel %>%
+  filter(treated == 1) %>%
+  summarize(avg_year = mean(greening_year, na.rm = TRUE)) %>%
+  pull(avg_year)
+
+
+```
+
+```{r}
+ggplot(did_plot_data,
+       aes(x = year, y = mean_outcome, color = factor(treated))) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  labs(
+    color = "Treated",
+    y = "Mean Gun Assaults",
+    title = "Difference-in-Differences: Gun Assaults",
+    subtitle = "Pre vs Post comparison"
+  ) +
+  theme_minimal()
+
+
+
+```
+
+```{r}
+
+did_plot_data <- did_plot_data %>%
+  mutate(group = if_else(treated == 1, "Greened lots", "Control"))
+
+ggplot(did_plot_data,
+       aes(x = year, y = mean_outcome, color = group)) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  annotate("text", x = treat_year + 0.5,
+           y = max(did_plot_data$mean_outcome),
+           label = "Treatment",
+           hjust = 0) +
+  labs(
+    y = "Mean Gun Assaults",
+    title = "Effect of Vacant Lot Greening on Gun Assaults",
+    subtitle = "Standard DID visualization"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+did_long <- branas_panel %>%
+  select(
+    year, treated, greening_year,
+    crime_gun_assaults,
+    crime_robberies,
+    crime_vandalism,
+    crime_disorderly,
+    crime_illegal_dumping,
+    health_high_stress,
+    health_high_chol,
+    health_high_bp,
+    health_low_exercise,
+    health_poor_health
+  ) %>%
+  pivot_longer(
+    cols = -c(year, treated, greening_year),
+    names_to = "outcome",
+    values_to = "value"
+  )
+
+
+```
+
+```{r}
+did_means <- did_long %>%
+  group_by(outcome, year, treated) %>%
+  summarize(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+
+
+```
+
+```{r}
+
+ggplot(did_means,
+       aes(x = year, y = mean_value, color = factor(treated))) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  facet_wrap(~outcome, scales = "free_y") +
+  labs(
+    color = "Treated",
+    y = "Mean outcome",
+    title = "Difference-in-Differences across outcomes"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+```{r}
+
+
+
+
+```

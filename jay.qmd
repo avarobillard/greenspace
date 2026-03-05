@@ -1,0 +1,183 @@
+---
+title: "Replication Draft: Branas et al. (2011) Greening Vacant Lots"
+format: html
+author: "Jay Kim, William Lien, Ava Robillard"
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(here)
+library(dplyr)
+library(fixest)        # fast DID/event-study style regressions
+library(lme4)          # mixed effects
+library(clubSandwich)  # cluster-robust SE for lmer models
+library(modelsummary)  # nice tables
+```
+
+```{r}
+#| message: false
+#| warning: false
+df <- read_csv(here("data", "branas2011_simulated_panel.csv"))
+
+df <- df %>%
+  mutate(section = factor(section),
+         year = as.integer(year),
+         lot_id = factor(lot_id),
+         contig_group_id = factor(contig_group_id),
+         matched_set_id = factor(matched_set_id),
+         treated = as.integer(treated),
+         post = as.integer(post),
+         treated_status = as.integer(treated_status),
+         did = post * treated_status)
+```
+
+```{r}
+#| message: false
+#| warning: false
+n_obs <- nrow(df)
+n_lots <- n_distinct(df$lot_id)
+years <- range(df$year)
+sections <- levels(df$section)
+
+list(n_obs=n_obs, n_lots=n_lots, years=years, sections=sections)
+```
+
+```{r}
+#| message: false
+#| warning: false
+# Pre-period only
+pre_df <- df %>% filter(post == 0)
+
+# Collapse to lot-level pre means (so each lot counts once)
+pre_lot <- pre_df %>%
+  group_by(lot_id, treated, section) %>%
+  summarise(
+    area_sqft = mean(area_sqft, na.rm=TRUE),
+    median_age = mean(median_age, na.rm=TRUE),
+    unemployed_sqmi = mean(unemployed_sqmi, na.rm=TRUE),
+    college_sqmi = mean(college_sqmi, na.rm=TRUE),
+    income_sqmi = mean(income_sqmi, na.rm=TRUE),
+    black_sqmi = mean(black_sqmi, na.rm=TRUE),
+    hispanic_sqmi = mean(hispanic_sqmi, na.rm=TRUE),
+    poverty_sqmi = mean(poverty_sqmi, na.rm=TRUE),
+    vacant_lot_density = mean(vacant_lot_density, na.rm=TRUE),
+    .groups="drop"
+  )
+
+# Quick compare treated vs control within section
+pre_lot %>%
+  group_by(section, treated) %>%
+  summarise(across(where(is.numeric), median, na.rm=TRUE), .groups="drop")
+```
+
+```{r}
+#| message: false
+#| warning: false
+covars <- c("area_sqft","vacant_lot_density","median_age","unemployed_sqmi",
+            "college_sqmi","income_sqmi","black_sqmi","hispanic_sqmi","poverty_sqmi")
+
+# Pre-period means for covariates (paper restricts covariates to baseline/pre variation)
+lot_cov_pre <- df %>%
+  filter(post == 0) %>%
+  group_by(lot_id) %>%
+  summarise(across(all_of(covars), ~mean(.x, na.rm=TRUE), .names="pre_{.col}"),
+            .groups="drop")
+
+# Pre-period mean outcome (Mi) for a specific outcome (repeat per outcome you model)
+make_analysis_df <- function(outcome){
+  mi <- df %>%
+    filter(post == 0) %>%
+    group_by(lot_id) %>%
+    summarise(Mi = mean(.data[[outcome]], na.rm=TRUE), .groups="drop")
+
+  df %>%
+    left_join(lot_cov_pre, by="lot_id") %>%
+    left_join(mi, by="lot_id")
+}
+```
+
+```{r}
+#| message: false
+#| warning: false
+analysis <- make_analysis_df("crime_gun_assaults")
+
+# Fixed effects: section-by-year
+analysis <- analysis %>%
+  mutate(section_year = interaction(section, year, drop=TRUE))
+
+m1 <- lmer(
+  crime_gun_assaults ~ post + treated + did +
+    section_year +
+    section:Mi +
+    pre_area_sqft + pre_vacant_lot_density + pre_median_age + pre_unemployed_sqmi +
+    pre_college_sqmi + pre_income_sqmi + pre_black_sqmi + pre_hispanic_sqmi + pre_poverty_sqmi +
+    (1 | contig_group_id),
+  data = analysis
+)
+
+# Cluster-robust SE at contiguous-lot group (proxy for paper)
+m1_vcov <- vcovCR(m1, cluster = analysis$contig_group_id, type="CR2")
+coef_test(m1, vcov = m1_vcov) %>% as.data.frame()
+```
+
+```{r}
+#| message: false
+#| warning: false
+event_df <- df %>%
+  mutate(rel_year = year - greening_year) %>%
+  filter(rel_year >= -5, rel_year <= 5)
+
+# Use fixest for convenient event-study; include section-by-year FE
+es <- feols(
+  crime_gun_assaults ~ i(rel_year, treated_status, ref = -1) | section^year,
+  data = event_df,
+  cluster = ~contig_group_id
+)
+
+iplot(es, xlab = "Years relative to greening", 
+      main = "Event study: gun assaults")
+```
+
+```{r}
+df_clean %>%
+  group_by(year, treated_status) %>%
+  summarise(
+    mean_gun_assaults = mean(crime_gun_assaults, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = year, y = mean_gun_assaults, color = factor(treated_status))) +
+  geom_line(size = 1.2) +
+  geom_point() +
+  labs(
+    title = "Gun Assaults Over Time: Treated vs Control Lots",
+    x = "Year",
+    y = "Average Gun Assaults",
+    color = "Treated"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+df_clean %>%
+  filter(post == 0) %>%
+  group_by(year, treated_status) %>%
+  summarise(
+    mean_gun_assaults = mean(crime_gun_assaults, na.rm = TRUE),
+    .groups = "drop") %>%
+  ggplot(aes(x = year, y = mean_gun_assaults, color = factor(treated_status))) +
+  geom_line(size = 1.2) +
+  geom_point() +
+  labs(
+    title = "Pre-Treatment Trends in Gun Assaults",
+    x = "Year",
+    y = "Average Gun Assaults",
+    color = "Treated") +
+  theme_minimal()
+```
+
