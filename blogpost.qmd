@@ -2,3 +2,114 @@
 title: "blogpost"
 format: html
 ---
+
+The authors conducted a decade-long difference-in-differences analysis of the impact of a vacant lot greening program in Philadelphia, Pennsylvania, on health and safety outcomes. ‘‘Before’’ and ‘‘after’’ outcome differences among treated vacant lots were compared with matched groups of control vacant lots that were eligible but did not receive treatment.
+
+```{r}
+#| message: FALSE
+library(tidyverse)
+library(here)
+library(fixest)
+```
+
+### Read in data
+
+```{r}
+#| message: FALSE
+
+sim_data <- read_csv(here("data", "branas2011_simulated_panel.csv")) %>%
+  # Drop simulation-only helper variables
+  select(-ends_with("_z")) %>% 
+  select(-cov_part)
+```
+
+### 1. Data Description
+
+After the code block(s) that read in and clean the data, add some notes covering:
+
+#### What does each row represent? What is the unit of observation?
+
+Unit of analysis: vacant-lot × year (panel). Each row is a lot-year observation.
+
+#### What are the key outcome, treatment, and control variables?
+
+Treatment- PHS program to green abandoned vacant lots in Philadelphia- used consistent treatment protocol of removing trash and debris, grading the land, planting grass and trees to create a park-like setting, and installing low wooden posts around each lot's perimeter to show that this lot was cared for. PHS returned multiple times each year for basic maintenance.
+
+-\> DiD approach to consider health and safety outcomes occuring on/around vacant lots in PHS program before and after they were treated, as compared with matched control vacant lots over the same time period.
+
+Control- control lots from 2 eligibility pools were randomly selected and matched to treated lots at a 3:1 ratio by city section - vacant lots eligible to serve as controls included only those that had never bnen greened from 1999 to 2008 but could have been chosen by the PHS for greening.
+
+The outcomes were various health and safety outcomes - health: high stress, high cholesterol, high blood pressure, low exercise, poor health status - crime: gun assaults, robberies, disorderly, and illegal dumping
+
+#### Any notable data cleaning decisions (dropped observations, constructed variables, etc.)
+
+'point-based' models where crimes (geocoded events) and health outcomes (survey-based) are converted into per-lot measurements using spatial methods (kernel density, inverse-distance weighting) and then modeled in DID regressions- in our simulated data, these outcomes are stored directly as continuous per-lot-per-year values.
+
+Also, the health outcomes were done every 2 years, but the simulated data has annual values.
+
+The first pool limited eligible vacant lots to only those that had at least 1 open code violation. Because none of the study’s final conclusions differed by control group type and because control lots with open violations were a better statistical match to greened lots (in terms of area, age, and unemployment), only findings obtained using this control group are reported.
+
+#### Sample size, time period, and geographic scope
+
+Years: 1999–2008 (10 years). Lots: 17,744 total (4,436 treated; 13,308 matched controls).
+
+### 2. Annotated Replication
+
+**Regression Model**\
+$$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}
+$$
+
+Where each regression model included different health or safety outcome of interest, Yit:
+
+-   i- number of vacant lots
+
+-   t- year of study
+
+-   (it is a unit of observation)
+
+-   Pit- pregreening-postgreening difference per vacant lot (main effect)- change from pre to post period for control group (Rit = 0)
+
+    -   pregreening yrs = 0, postgreening yrs = 1
+
+-   Rit- treatment-control difference (main effect)- difference in intercept between treated + control groups at baseline during pre-period (Pit = 0)
+
+    -   control lots = 0, greened lots = 1
+
+-   Pit x Rit- interaction term- allows for change in trend
+
+-   Sit x t- fixed-effects city section x year interaction term to account for geographic variability and clustering over time
+
+-   Sit x Mi- fixed effect city section x preperiod mean outcome interaction term to adjust for regression to the mean
+
+-   Xit- series of p independent covariates (demographic variables, lot area, vacant lot clustering)
+
+-   xi- lot fixed effects
+
+-   Eit- residual error- group-level random effects parameter that adjusted for effects of individual vacant lots that were contiguous to one another
+
+```{r}
+# Lot-level average outcome during pre-greening period
+sim_data <- sim_data |>
+  group_by(lot_id) |>
+  mutate(pre_mean = mean(crime_gun_assaults[post == 0])) |>
+  mutate(rel_year = year - greening_year) %>% 
+  ungroup() 
+```
+
+```{r}
+# Create model based on equation
+model <- feols(
+  crime_gun_assaults ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
+                       section:pre_mean +   # B5
+                       area_sqft + vacant_lot_density +    # lot covariates
+                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+                       income_sqmi + black_sqmi +
+                       hispanic_sqmi + poverty_sqmi + median_age |
+                       section^year,                        # B4- dummy variables section x yr 
+  data = sim_data,
+  cluster = ~ contig_group_id # cluster ID
+)
+
+iplot(model, xlab = "Greening",
+      ylab = "Gun assaults")
+```

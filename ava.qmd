@@ -118,6 +118,24 @@ iplot(model, xlab = "Greening",
 summary(model)
 ```
 
+```{r}
+# Create model based on equation
+model <- feols(
+  health_ ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
+                       section:pre_mean +   # B5
+                       area_sqft + vacant_lot_density +    # lot covariates
+                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+                       income_sqmi + black_sqmi +
+                       hispanic_sqmi + poverty_sqmi + median_age |
+                       section^year,                        # B4- dummy variables section x yr 
+  data = sim_data,
+  cluster = ~ contig_group_id # cluster ID
+)
+
+iplot(model, xlab = "Greening",
+      ylab = "High Chol")
+```
+
 ### 3. Critical Evaluation
 
 #### Causal identification: Is the identification strategy credible? What would have to be true for the estimates to be causal?
