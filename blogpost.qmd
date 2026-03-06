@@ -191,6 +191,12 @@ Now that we have analyzed the parallel trends assumption for our outcome variabl
 
 #### Regression to estimate treatment effect
 
+Let's use the `fixest` package to run a model with i(), a syntax for including a period, treatment, and reference in a DiD. 
+
+Here, i(rel_year, treated_status, ref = -1) creates an interaction between treatment status and each year relative to greening, producing a separate coefficient for each year. The year before greening (rel_year = -1) is excluded as the reference period.
+
+Let's do our safety outcome first.
+
 ```{r}
 #| message: false
 #| warning: false
@@ -211,12 +217,9 @@ iplot(model1, xlab = "Greening",
       ylab = "Gun Assaults",
       main = "Event Study: Gun Assaults")
 ```
+This plot supports the parallel trends assumption, showing similar pre-treatment trends between treated and control lots before greening, followed by a clear reduction in gun assaults immediately after treatment.
 
-```{r}
-#| message: false
-#| warning: false
-summary(model1)
-```
+Next, let's look at our health outcome. 
 
 ```{r}
 #| message: false
@@ -238,24 +241,18 @@ iplot(model2, xlab = "Greening",
       ylab = "High Cholestrol",
       main = "Event Study: High Cholestrol")
 ```
+This plot shows a slightly less consistent trend pre-treatment and a less clear reduction in high cholesterol post-treatment. 
 
 ```{r}
-#| message: false
-#| warning: false
-
-summary(model2)
-```
-
-
----------------------------------------
-
-```{r}
+#| code-fold: true
 # Lot-level average outcome during pre-greening period
 sim_data <- sim_data %>% 
   group_by(lot_id) %>% 
   mutate(pre_mean = mean(crime_gun_assaults[post == 0])) %>% 
   ungroup() 
 ```
+
+Now, let's run some models just using an interaction term (post:treated) and look at our key term from the study's model, $\beta_{3}(P_{it}\times R_{it})$, as this captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
 
 ```{r}
 # Create model based on equation- selected safety outcome
@@ -273,6 +270,7 @@ safety_model <- feols(
 ```
 
 ```{r}
+#| code-fold: true
 #summary(safety_model)
 
 tidy(safety_model) |>
@@ -304,6 +302,7 @@ health_model <- feols(
 ```
 
 ```{r}
+#| code-fold: true
 #summary(health_model)
 
 tidy(health_model) |>
