@@ -34,7 +34,7 @@ In this blog post, we will replicate the Branas et al.[^2] study with simulated 
 #| message: false
 #| warning: false
 #| eval: true
-#| echo: false
+#| code-fold: TRUE
 
 # Load in library
 library(tidyverse)
