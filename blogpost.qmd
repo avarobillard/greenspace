@@ -9,15 +9,32 @@ editor_options:
 
 ### A replication of analysis from A Difference-in-Differences Analysis of Health, Safety, and Greening Vacant Urban Space (Branas et al., 2011)
 
-
 The Pennsylvania Horticultural Society (PHS) directs a program to clean, green and maintain abandoned lots in Philadelphia, Pennsylvania. The authors of this study conducted a decade-long difference-in-differences analysis of the impact of the PHS vacant lot greening program on health and safety outcomes.
+
+```{r greening-fig}
+#| message: false
+#| warning: false
+#| eval: true
+#| echo: false
+#| fig-align: "center"
+#| out-width: "100%"
+#| fig-cap: "Before and After Vacant Lot Greening by the Pennsylvania Horticulture Society"
+knitr::include_graphics(here::here("images", "greening.png"))
+```
+
+Reference: Greening Vacant Lots to Reduce Violent Crime: A Randomised Controlled Trial - Scientific Figure on ResearchGate.[^1]
+
+[^1]: Available from: https://www.researchgate.net/figure/Before-and-after-vacant-lot-greening-by-the-Pennsylvania-Horticulture-Society_fig1_230631944 \[accessed 6 Mar 2026\]
 
 In this blog post, we will replicate this study with simulated data to dive further into the causal claims.
 
-```{r}
+```{r setup}
 #| message: false
 #| warning: false
-# 
+#| eval: true
+#| echo: false
+
+# Load in library
 library(tidyverse)
 library(here)
 library(fixest)
@@ -26,13 +43,6 @@ library(janitor)
 library(stringr)
 library(gt)
 library(broom)
-```
-
-### Read in data
-
-```{r}
-#| message: false
-#| warning: false
 
 # Read in simulated data
 sim_data <- read_csv(here("data", "branas2011_simulated_panel.csv")) %>%
@@ -41,7 +51,7 @@ sim_data <- read_csv(here("data", "branas2011_simulated_panel.csv")) %>%
   select(-cov_part)
 ```
 
----------------------------------------
+------------------------------------------------------------------------
 
 ### 1. Data Description
 
@@ -57,8 +67,7 @@ The **outcome variables** were various health and safety outcomes. Health outcom
 
 Overall, the difference-in-differences approach considers these health and safety outcomes occurring on and around vacant lots in the PHS program before and after they were treated, as compared with matched control vacant lots over the same time period.
 
-
-#### Notable data cleaning decisions 
+#### Notable data cleaning decisions
 
 'Point-based' models where crimes (geocoded events) and health outcomes (survey-based) are converted into per-lot measurements using spatial methods (kernel density, inverse-distance weighting) and then modeled in DID regressions- in our simulated data, these outcomes are stored directly as continuous per-lot-per-year values.
 
@@ -66,12 +75,13 @@ In the study, the health survey was conducted biennially while our simulated dat
 
 In terms of selecting the controls, there were initially two groups of randomly selected control lots as seen in Figure 1. The first pool limited eligible vacant lots to only those that had at least 1 open code violation. This control group was selected for the study's final findings as these were a better statistical match to greened lots (in terms of area, age, and unemployment).
 
-```{r}
+```{r greening-model}
+#| message: false
+#| warning: false
 #| eval: true
 #| echo: false
 #| fig-align: "center"
 #| out-width: "100%"
-#| fig-alt: "Alt text here"
 knitr::include_graphics(here::here("images", "figure1.png"))
 ```
 
@@ -81,20 +91,22 @@ The pre-greening period for each treated lot was defined as the years prior to t
 
 The study covered 10 years, from 1999–2008. There were 17,744 total lots in this study, where 4,436 were treated and 13,308 were the associated matched controls (a 1:3 ratio).
 
----------------------------------------
+------------------------------------------------------------------------
 
 ### 2. Annotated Replication
 
 #### **Regression Model**
+
 ::: {style="font-size: 0.85em;"}
 $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}$$
 :::
 
 Where each regression model included different health or safety outcome of interest, $Yit$. $it$ is a unit of observation, or lot x year combination. The most key term here for our difference-in-differences analysis is $\beta_{3}(P_{it}\times R_{it})$, which captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
 
-Before replicating this model, we need to take a deeper look at our data. 
+Before replicating this model, we need to take a deeper look at our data.
 
 #### How well is our data matched?
+
 0 = control lots, 1 = treatment lots
 
 ```{r}
@@ -122,7 +134,7 @@ baseline_lot %>%
   tbl_summary(by = treated, statistic = all_continuous() ~ "{mean} ({sd})")
 ```
 
-One of the key assumptions of a difference-in-differences analysis is parallel trends between the treatment and control groups during the pre-treatment period. This allows us to have a true causal estimate of any effect that greening vacant lots have on the various health and safety outcomes. 
+One of the key assumptions of a difference-in-differences analysis is parallel trends between the treatment and control groups during the pre-treatment period. This allows us to have a true causal estimate of any effect that greening vacant lots have on the various health and safety outcomes.
 
 Let's take a look at the trends throughout the study period our different outcome variables!
 
@@ -130,6 +142,9 @@ Let's take a look at the trends throughout the study period our different outcom
 
 ```{r}
 #| code-fold: true
+#| message: false
+#| warning: false
+
 # 1) long format
 did_long <- sim_data %>%
   select(year, treated, greening_year,
@@ -180,22 +195,56 @@ ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
         axis.text.x = element_blank())
 ```
 
-It appears that some outcome variables meet the parallel trends assumption better than others, so we will select one health and one safety outcome that appears to have the best parallel trends pre-treatment. 
+It appears that some outcome variables meet the parallel trends assumption better than others, so we will select one health and one safety outcome that appears to have the best parallel trends pre-treatment.
 
 #### Selected outcomes for models
-(insert close up image of 2 plots here!) 
+
+```{r selected-outcomes}
+#| code-fold: true
+#| message: false
+#| warning: false
+
+# Reshape data into long format so we can plot multiple outcomes using the same structure
+did_means <- sim_data %>%
+  pivot_longer(cols = c(crime_gun_assaults, health_high_chol),
+               names_to = "outcome",
+               values_to = "value") %>%
+  group_by(outcome, year, treated) %>%
+  summarize(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# Compute the average outcome by year and treatment status
+treat_year <- sim_data %>%
+  filter(treated == 1) %>%
+  summarize(avg_year = round(mean(greening_year, na.rm = TRUE))) %>%
+  pull(avg_year)
+
+# Calculate the average greening year among treated lots
+ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.8) +
+  geom_vline(xintercept = treat_year, linetype = "dashed") +
+  facet_wrap(~ outcome, scales = "free_y",
+             labeller = as_labeller(facet_names)) +
+  scale_color_manual(values = c("0" = "#6F4E37", "1" = "#50C878"),
+                   labels = c("0" = "Control", "1" = "Treated")) +
+  labs(color = "Treated", y = "Mean outcome",
+       title = "Difference-in-Differences Mean Trends",
+       subtitle = "Dashed line = Average Greening Year in Treated Lots") +
+  theme_minimal()
+```
 
 Now that we have analyzed the parallel trends assumption for our outcome variables, gun assaults and high cholesterol, let's run some models!
 
 #### Regression to estimate treatment effect
 
-Let's use the `fixest` package to run a model with i(), a syntax for including a period, treatment, and reference in a DiD. 
+Let's use the `fixest` package to run a model with i(), a syntax for including a period, treatment, and reference in a DiD.
 
 Here, i(rel_year, treated_status, ref = -1) creates an interaction between treatment status and each year relative to greening, producing a separate coefficient for each year. The year before greening (rel_year = -1) is excluded as the reference period.
 
 Let's do our safety outcome first.
 
 ```{r}
+#| code-fold: true
 #| message: false
 #| warning: false
 
@@ -215,11 +264,13 @@ iplot(model1, xlab = "Greening",
       ylab = "Gun Assaults",
       main = "Event Study: Gun Assaults")
 ```
+
 This plot supports the parallel trends assumption, showing similar pre-treatment trends between treated and control lots before greening, followed by a clear reduction in gun assaults immediately after treatment.
 
-Next, let's look at our health outcome. 
+Next, let's look at our health outcome.
 
 ```{r}
+#| code-fold: true
 #| message: false
 #| warning: false
 
@@ -239,10 +290,14 @@ iplot(model2, xlab = "Greening",
       ylab = "High Cholestrol",
       main = "Event Study: High Cholestrol")
 ```
-This plot shows a slightly less consistent trend pre-treatment and a less clear reduction in high cholesterol post-treatment. 
+
+This plot shows a slightly less consistent trend pre-treatment and a less clear reduction in high cholesterol post-treatment.
 
 ```{r}
 #| code-fold: true
+#| message: false
+#| warning: false
+
 # Lot-level average outcome during pre-greening period
 sim_data <- sim_data %>% 
   group_by(lot_id) %>% 
@@ -253,75 +308,80 @@ sim_data <- sim_data %>%
 Now, let's run some models just using an interaction term (post:treated) and look at our key term from the study's model, $\beta_{3}(P_{it}\times R_{it})$, as this captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
 
 ```{r}
-# Create model based on equation- selected safety outcome
+#| code-fold: true
+#| message: false
+#| warning: false
+
+# Create model based on equation - selected safety outcome
 safety_model <- feols(
-  crime_gun_assaults ~ post + treated_status + post:treated_status +     # B1, B2, B3
-                       section:pre_mean +   # B5
-                       area_sqft + vacant_lot_density +    # lot covariates
-                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+  crime_gun_assaults ~ post + treated_status + post:treated_status + # B1, B2, B3
+                       section:pre_mean + # B5
+                       area_sqft + vacant_lot_density + # lot covariates
+                       unemployed_sqmi + college_sqmi + # baseline covariates
                        income_sqmi + black_sqmi +
                        hispanic_sqmi + poverty_sqmi + median_age |
-                       section^year,                        # B4- dummy variables section x yr 
+                       section^year, # B4- dummy variables section x yr 
   data = sim_data,
-  cluster = ~ contig_group_id # cluster ID
-)
+  cluster = ~ contig_group_id) # cluster ID
 ```
 
 ```{r}
 #| code-fold: true
-#summary(safety_model)
+#| message: false
+#| warning: false
 
-tidy(safety_model) |>
+# Convert the regression model output into a tidy data frame
+tidy(safety_model) %>% 
   filter(term == "post:treated_status") %>% 
-    gt() |>
-  fmt_number(decimals = 3) |>
-  cols_label(
-    term = "Term",
-    estimate = "Estimate",
-    std.error = "Std. Error",
-    statistic = "t-value",
-    p.value = "p-value"
-  )
+    gt() %>% 
+  fmt_number(decimals = 3) %>% 
+  cols_label(term = "Term",
+             estimate = "Estimate",
+             std.error = "Std. Error",
+             statistic = "t-value",
+             p.value = "p-value")
 ```
 
 ```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+
 # Create model based on equation- selected health outcome
 health_model <- feols(
-  health_high_chol ~ post + treated_status + post:treated_status +       # B1, B2, B3
-                       section:pre_mean +   # B5
-                       area_sqft + vacant_lot_density +    # lot covariates
-                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+  health_high_chol ~ post + treated_status + post:treated_status + # B1, B2, B3
+                       section:pre_mean + # B5
+                       area_sqft + vacant_lot_density + # lot covariates
+                       unemployed_sqmi + college_sqmi + # baseline covariates
                        income_sqmi + black_sqmi +
                        hispanic_sqmi + poverty_sqmi + median_age |
-                       section^year,                        # B4- dummy variables section x yr 
+                       section^year, # B4 - dummy variables section x yr 
   data = sim_data,
-  cluster = ~ contig_group_id # cluster ID
-)
+  cluster = ~ contig_group_id) # Cluster ID
 ```
 
 ```{r}
 #| code-fold: true
-#summary(health_model)
+#| message: false
+#| warning: false
 
-tidy(health_model) |>
-  filter(term == "post:treated_status") |> 
-    gt() |>
-  fmt_number(decimals = 3) |>
-  cols_label(
-    term = "Term",
-    estimate = "Estimate",
-    std.error = "Std. Error",
-    statistic = "t-value",
-    p.value = "p-value"
-  )
+# Keep only the DID interaction term (Post × Treated)
+tidy(health_model) %>% 
+  filter(term == "post:treated_status") %>%  
+    gt() %>% 
+  fmt_number(decimals = 3) %>% 
+  cols_label(term = "Term",
+             estimate = "Estimate",
+             std.error = "Std. Error",
+             statistic = "t-value",
+             p.value = "p-value")
 ```
 
-Describe similarities and differences in model output here!! overall, by geographic sector, etc.
----------------------------------------
+## Describe similarities and differences in model output here!! overall, by geographic sector, etc.
 
 ### 3. Critical Evaluation
 
-After running our models, we will reflect on our findings in the context of the study design. 
+After running our models, we will reflect on our findings in the context of the study design.
 
 #### Causal identification: Is the identification strategy credible? What would have to be true for the estimates to be causal?
 
