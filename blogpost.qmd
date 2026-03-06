@@ -9,7 +9,7 @@ editor_options:
 
 ### A replication of analysis from A Difference-in-Differences Analysis of Health, Safety, and Greening Vacant Urban Space (Branas et al., 2011)
 
-The Pennsylvania Horticultural Society (PHS) directs a program to clean, green and maintain abandoned lots in Philadelphia, Pennsylvania. The authors of this study conducted a decade-long difference-in-differences analysis of the impact of the PHS vacant lot greening program on health and safety outcomes.
+The Pennsylvania Horticultural Society (PHS) directs a program to clean, green and maintain abandoned lots in Philadelphia, Pennsylvania. The authors of this study conducted a decade-long difference-in-differences analysis of the impapuct of the PHS vacant lot greening program on health and safety outcomes.
 
 ```{r greening-fig}
 #| message: false
@@ -121,12 +121,14 @@ sim_data <- sim_data %>%
   mutate(rel_year = year - greening_year) %>% 
   ungroup() 
 
+# Group with lot id to see effect of baseline
 baseline_lot <- sim_data %>%
   filter(post == 0) %>%
   group_by(lot_id) %>%
   slice_min(year, n = 1, with_ties = FALSE) %>%
   ungroup()
 
+# Select the necessary column for the quick table
 baseline_lot %>%
   select(treated, area_sqft, median_age, unemployed_sqmi,
          college_sqmi, income_sqmi, black_sqmi, hispanic_sqmi, 
@@ -145,7 +147,7 @@ Let's take a look at the trends throughout the study period our different outcom
 #| message: false
 #| warning: false
 
-# 1) long format
+# Change the data frame into long format
 did_long <- sim_data %>%
   select(year, treated, greening_year,
          crime_gun_assaults, crime_robberies, crime_vandalism,
@@ -155,18 +157,18 @@ did_long <- sim_data %>%
   pivot_longer(cols = -c(year, treated, greening_year),
                names_to = "outcome", values_to = "value")
 
-# 2) means by year × treated within outcome
+# Means by year × treated within outcome
 did_means <- did_long %>%
   group_by(outcome, year, treated) %>%
   summarize(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
 
-# 3) define a reference "treatment year" line (average greening year among treated)
+# Define a reference "treatment year" line (average greening year among treated)
 treat_year <- sim_data %>%
   filter(treated == 1) %>%
   summarize(avg_year = round(mean(greening_year, na.rm = TRUE))) %>%
   pull(avg_year)
 
-# 4) rename the plot & graph
+# Rename the plot & graph
 facet_names <- c("crime_disorderly" = "Disorderly Conduct",
                  "crime_gun_assaults" = "Gun Assaults",
                  "crime_illegal_dumping" = "Illegal Dumping",
