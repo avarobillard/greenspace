@@ -9,7 +9,7 @@ editor_options:
 
 ### A replication of analysis from A Difference-in-Differences Analysis of Health, Safety, and Greening Vacant Urban Space (Branas et al., 2011)
 
-The Pennsylvania Horticultural Society (PHS) directs a program to clean, green and maintain abandoned lots in Philadelphia, Pennsylvania. The authors of this study conducted a decade-long difference-in-differences analysis of the impapuct of the PHS vacant lot greening program on health and safety outcomes.
+The Pennsylvania Horticultural Society (PHS) directs a program to clean, green and maintain abandoned lots in Philadelphia, Pennsylvania. The authors of this study conducted a decade-long difference-in-differences analysis of the impact of the PHS vacant lot greening program on health and safety outcomes.
 
 ```{r greening-fig}
 #| message: false
@@ -26,7 +26,9 @@ Reference: Greening Vacant Lots to Reduce Violent Crime: A Randomised Controlled
 
 [^1]: Available from: https://www.researchgate.net/figure/Before-and-after-vacant-lot-greening-by-the-Pennsylvania-Horticulture-Society_fig1_230631944 \[accessed 6 Mar 2026\]
 
-In this blog post, we will replicate this study with simulated data to dive further into the causal claims.
+In this blog post, we will replicate the Branas et al.[^2] study with simulated data to dive further into the causal claims.
+
+[^2]: Available from: https://pmc.ncbi.nlm.nih.gov/articles/PMC3224254/ \[accessed 6 Mar 2026\]
 
 ```{r setup}
 #| message: false
@@ -310,7 +312,6 @@ sim_data <- sim_data %>%
 Now, let's run some models just using an interaction term (post:treated) and look at our key term from the study's model, $\beta_{3}(P_{it}\times R_{it})$, as this captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
 
 ```{r}
-#| code-fold: true
 #| message: false
 #| warning: false
 
@@ -345,7 +346,6 @@ tidy(safety_model) %>%
 ```
 
 ```{r}
-#| code-fold: true
 #| message: false
 #| warning: false
 
@@ -379,7 +379,7 @@ tidy(health_model) %>%
              p.value = "p-value")
 ```
 
-## Describe similarities and differences in model output here!! overall, by geographic sector, etc.
+Our model output for the gun assaults outcome (-7.661) was significant and similar to the study findings for all 4 sections of Philadelphia (-7.90). Our model output for high cholesterol (0.061) was lower than the study findings (0.76), and insignificant. The study discussed these outcomes, stating that gun assaults were significantly reduced citywide after the greening treatment. They state that the consistent increase in high cholesterol related to the greening of vacant lots was surprising and runs counter to prior work. 
 
 ### 3. Critical Evaluation
 
