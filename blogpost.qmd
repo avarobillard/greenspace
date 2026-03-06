@@ -1,13 +1,11 @@
 ---
-title: "Blog Post"
+title: "Does Urban Greening Reduce Crime and Promote Health?"
 format: html
 author: "Jay Kim, William Lien, Ava Robillard"
 date: 3/5/26
 editor_options: 
   chunk_output_type: inline
 ---
-
-# **Does urban greening reduce crime and promote health?**
 
 ### A replication of analysis from A Difference-in-Differences Analysis of Health, Safety, and Greening Vacant Urban Space (Branas et al., 2011)
 
