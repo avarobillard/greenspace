@@ -1,11 +1,20 @@
 ---
-title: "blogpost"
+title: "Blog Post"
 format: html
+author: "Jay Kim, William Lien, Ava Robillard"
+date: 3/5/26
 editor_options: 
   chunk_output_type: inline
 ---
 
-The authors conducted a decade-long difference-in-differences analysis of the impact of a vacant lot greening program in Philadelphia, Pennsylvania, on health and safety outcomes. ‘‘Before’’ and ‘‘after’’ outcome differences among treated vacant lots were compared with matched groups of control vacant lots that were eligible but did not receive treatment.
+# **Does urban greening reduce crime and promote health?**
+
+### A replication of analysis from A Difference-in-Differences Analysis of Health, Safety, and Greening Vacant Urban Space (Branas et al., 2011)
+
+
+The Pennsylvania Horticultural Society (PHS) directs a program to clean, green and maintain abandoned lots in Philadelphia, Pennsylvania. The authors of this study conducted a decade-long difference-in-differences analysis of the impact of the PHS vacant lot greening program on health and safety outcomes.
+
+In this blog post, we will replicate this study with simulated data to dive further into the causal claims.
 
 ```{r}
 #| message: false
@@ -18,6 +27,7 @@ library(gtsummary)
 library(janitor)
 library(stringr)
 library(gt)
+library(broom)
 ```
 
 ### Read in data
@@ -33,69 +43,64 @@ sim_data <- read_csv(here("data", "branas2011_simulated_panel.csv")) %>%
   select(-cov_part)
 ```
 
+---------------------------------------
+
 ### 1. Data Description
 
-After the code block(s) that read in and clean the data, add some notes covering:
+#### Key variables and data structure
 
-#### What does each row represent? What is the unit of observation?
+In this data, **each row** represents a vacant lot x year observation (i.e. L00001 x 2008). The **unit of analysis** of this study is vacant lot x year.
 
-Unit of analysis: vacant-lot × year (panel). Each row is a lot-year observation.
+The **treatment variable** represented vacant lots greened by the PHS program, during which there was a consistent treatment protocol of removing trash and debris, grading the land, planting grass and trees to create a park-like setting, and installing low wooden posts around each lot's perimeter to show that this lot was cared for. PHS returned multiple times each year for basic maintenance.
 
-#### What are the key outcome, treatment, and control variables?
+The **control variable** represented control lots from 2 eligibility pools were randomly selected and matched to treated lots at a 3:1 ratio by city section - vacant lots eligible to serve as controls included only those that had never been greened from 1999 to 2008 but could have been chosen by the PHS for greening.
 
-Treatment - PHS program to green abandoned vacant lots in Philadelphia- used consistent treatment protocol of removing trash and debris, grading the land, planting grass and trees to create a park-like setting, and installing low wooden posts around each lot's perimeter to show that this lot was cared for. PHS returned multiple times each year for basic maintenance.
+The **outcome variables** were various health and safety outcomes. Health outcomes include high stress, high cholesterol, high blood pressure, low exercise, poor health status. Safety outcomes include gun assaults, robberies, disorderly, and illegal dumping.
 
--\> DiD approach to consider health and safety outcomes occuring on/around vacant lots in PHS program before and after they were treated, as compared with matched control vacant lots over the same time period.
+Overall, the difference-in-differences approach considers these health and safety outcomes occurring on and around vacant lots in the PHS program before and after they were treated, as compared with matched control vacant lots over the same time period.
 
-Control - control lots from 2 eligibility pools were randomly selected and matched to treated lots at a 3:1 ratio by city section - vacant lots eligible to serve as controls included only those that had never bnen greened from 1999 to 2008 but could have been chosen by the PHS for greening.
 
-The outcomes were various health and safety outcomes - health: high stress, high cholesterol, high blood pressure, low exercise, poor health status - crime: gun assaults, robberies, disorderly, and illegal dumping
+#### Notable data cleaning decisions 
 
-#### Any notable data cleaning decisions (dropped observations, constructed variables, etc.)
+'Point-based' models where crimes (geocoded events) and health outcomes (survey-based) are converted into per-lot measurements using spatial methods (kernel density, inverse-distance weighting) and then modeled in DID regressions- in our simulated data, these outcomes are stored directly as continuous per-lot-per-year values.
 
-'point-based' models where crimes (geocoded events) and health outcomes (survey-based) are converted into per-lot measurements using spatial methods (kernel density, inverse-distance weighting) and then modeled in DID regressions- in our simulated data, these outcomes are stored directly as continuous per-lot-per-year values.
+In the study, the health survey was conducted biennially while our simulated data contains annual values for this information.
 
-Also, the health outcomes were done every 2 years, but the simulated data has annual values.
+In terms of selecting the controls, there were initially two groups of randomly selected control lots as seen in Figure 1. The first pool limited eligible vacant lots to only those that had at least 1 open code violation. This control group was selected for the study's final findings as these were a better statistical match to greened lots (in terms of area, age, and unemployment).
 
-The first pool limited eligible vacant lots to only those that had at least 1 open code violation. Because none of the study’s final conclusions differed by control group type and because control lots with open violations were a better statistical match to greened lots (in terms of area, age, and unemployment), only findings obtained using this control group are reported.
+```{r}
+#| eval: true
+#| echo: false
+#| fig-align: "center"
+#| out-width: "100%"
+#| fig-alt: "Alt text here"
+knitr::include_graphics(here::here("images", "figure1.png"))
+```
+
+The pre-greening period for each treated lot was defined as the years prior to the year that the lot was greened/treated (from 1999 to 2008), making a time-varying treatment status variable. This same pre-period was assigned to the 3 randomly selected, matched control lots. The mean pre-treatment period for the vacant lots in the study was 6.18 years.
 
 #### Sample size, time period, and geographic scope
 
-Years: 1999–2008 (10 years). Lots: 17,744 total (4,436 treated; 13,308 matched controls).
+The study covered 10 years, from 1999–2008. There were 17,744 total lots in this study, where 4,436 were treated and 13,308 were the associated matched controls (a 1:3 ratio).
+
+---------------------------------------
 
 ### 2. Annotated Replication
 
-### **Regression Model** $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}$$
+#### **Regression Model**
+::: {style="font-size: 0.85em;"}
+$$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}$$
+:::
 
-Where each regression model included different health or safety outcome of interest, Yit:
+Where each regression model included different health or safety outcome of interest, $Yit$. $it$ is a unit of observation, or lot x year combination. The most key term here for our difference-in-differences analysis is $\beta_{3}(P_{it}\times R_{it})$, which captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
 
--   i - number of vacant lots
+Before replicating this model, we need to take a deeper look at our data. 
 
--   t - year of study
-
--   (it is a unit of observation)
-
--   Pit - pregreening-postgreening difference per vacant lot (main effect)- change from pre to post period for control group (Rit = 0)
-
-    -   pregreening yrs = 0, postgreening yrs = 1
-
--   Rit - treatment-control difference (main effect)- difference in intercept between treated + control groups at baseline during pre-period (Pit = 0)
-
-    -   control lots = 0, greened lots = 1
-
--   Pit x Rit - interaction term- allows for change in trend
-
--   Sit x t - fixed-effects city section x year interaction term to account for geographic variability and clustering over time
-
--   Sit x Mi - fixed effect city section x preperiod mean outcome interaction term to adjust for regression to the mean
-
--   Xit - series of p independent covariates (demographic variables, lot area, vacant lot clustering)
-
--   xi - lot fixed effects
-
--   Eit - residual error- group-level random effects parameter that adjusted for effects of individual vacant lots that were contiguous to one another
+#### How well is our data matched?
+0 = control lots, 1 = treatment lots
 
 ```{r}
+#| code-fold: true
 #| message: false
 #| warning: false
 
@@ -119,7 +124,14 @@ baseline_lot %>%
   tbl_summary(by = treated, statistic = all_continuous() ~ "{mean} ({sd})")
 ```
 
+One of the key assumptions of a difference-in-differences analysis is parallel trends between the treatment and control groups during the pre-treatment period. This allows us to have a true causal estimate of any effect that greening vacant lots have on the various health and safety outcomes. 
+
+Let's take a look at the trends throughout the study period our different outcome variables!
+
+#### Parallel trends assumption
+
 ```{r}
+#| code-fold: true
 # 1) long format
 did_long <- sim_data %>%
   select(year, treated, greening_year,
@@ -144,7 +156,7 @@ treat_year <- sim_data %>%
 # 4) rename the plot & graph
 facet_names <- c("crime_disorderly" = "Disorderly Conduct",
                  "crime_gun_assaults" = "Gun Assaults",
-                 "crime_illegal_dumpin" = "Illegal Dumping",
+                 "crime_illegal_dumping" = "Illegal Dumping",
                  "crime_robberies" = "Robberies",
                  "crime_vandalism" = "Vandalism",
                  "health_high_bp" = "High Blood Pressure",
@@ -157,9 +169,11 @@ ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
   geom_line(linewidth = 0.8) +
   geom_point(size = 1.5) +
   geom_vline(xintercept = treat_year, linetype = "dashed") +
+  scale_color_manual(values = c("0" = "#6F4E37", "1" = "#50C878"),
+                   labels = c("0" = "Control", "1" = "Treated")) +
   facet_wrap(~outcome, scales = "free_y",
              labeller = as_labeller(facet_names)) +
-  labs(color = "Treated",
+  labs(color = "Group",
        y = "Mean outcome",
        title = "Difference-in-Differences across outcomes",
        subtitle = "Dashed line = average greening year among treated lots") +
@@ -167,6 +181,15 @@ ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
   theme(axis.ticks.x = element_blank(),
         axis.text.x = element_blank())
 ```
+
+It appears that some outcome variables meet the parallel trends assumption better than others, so we will select one health and one safety outcome that appears to have the best parallel trends pre-treatment. 
+
+#### Selected outcomes for models
+(insert close up image of 2 plots here!) 
+
+Now that we have analyzed the parallel trends assumption for our outcome variables, gun assaults and high cholesterol, let's run some models!
+
+#### Regression to estimate treatment effect
 
 ```{r}
 #| message: false
@@ -223,7 +246,85 @@ iplot(model2, xlab = "Greening",
 summary(model2)
 ```
 
+
+---------------------------------------
+
+```{r}
+# Lot-level average outcome during pre-greening period
+sim_data <- sim_data %>% 
+  group_by(lot_id) %>% 
+  mutate(pre_mean = mean(crime_gun_assaults[post == 0])) %>% 
+  ungroup() 
+```
+
+```{r}
+# Create model based on equation- selected safety outcome
+safety_model <- feols(
+  crime_gun_assaults ~ post + treated_status + post:treated_status +     # B1, B2, B3
+                       section:pre_mean +   # B5
+                       area_sqft + vacant_lot_density +    # lot covariates
+                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+                       income_sqmi + black_sqmi +
+                       hispanic_sqmi + poverty_sqmi + median_age |
+                       section^year,                        # B4- dummy variables section x yr 
+  data = sim_data,
+  cluster = ~ contig_group_id # cluster ID
+)
+```
+
+```{r}
+#summary(safety_model)
+
+tidy(safety_model) |>
+  filter(term == "post:treated_status") %>% 
+    gt() |>
+  fmt_number(decimals = 3) |>
+  cols_label(
+    term = "Term",
+    estimate = "Estimate",
+    std.error = "Std. Error",
+    statistic = "t-value",
+    p.value = "p-value"
+  )
+```
+
+```{r}
+# Create model based on equation- selected health outcome
+health_model <- feols(
+  health_high_chol ~ post + treated_status + post:treated_status +       # B1, B2, B3
+                       section:pre_mean +   # B5
+                       area_sqft + vacant_lot_density +    # lot covariates
+                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+                       income_sqmi + black_sqmi +
+                       hispanic_sqmi + poverty_sqmi + median_age |
+                       section^year,                        # B4- dummy variables section x yr 
+  data = sim_data,
+  cluster = ~ contig_group_id # cluster ID
+)
+```
+
+```{r}
+#summary(health_model)
+
+tidy(health_model) |>
+  filter(term == "post:treated_status") |> 
+    gt() |>
+  fmt_number(decimals = 3) |>
+  cols_label(
+    term = "Term",
+    estimate = "Estimate",
+    std.error = "Std. Error",
+    statistic = "t-value",
+    p.value = "p-value"
+  )
+```
+
+Describe similarities and differences in model output here!! overall, by geographic sector, etc.
+---------------------------------------
+
 ### 3. Critical Evaluation
+
+After running our models, we will reflect on our findings in the context of the study design. 
 
 #### Causal identification: Is the identification strategy credible? What would have to be true for the estimates to be causal?
 
@@ -235,7 +336,7 @@ In the results, crime outcomes appear stronger and more consistent, while health
 
 Some outcomes are more challenging to interpret. For instance, reports of disorderly incidents increase before treatment and even more after treatment. One possibility is that greening attracts more people to the area, leading to increased foot traffic and consequently more reported disorder, even if serious crime decreases. Meanwhile, outcomes related to low exercise seem to show more improvement.
 
-#### Statistical assumptions: Are key assumptions (parallel trends, exclusion restriction, etc.) tested or defended? Do you find the evidence convincing?
+#### Statistical assumptions: Are key assumptions tested or defended? Do you find the evidence convincing?
 
 We observed that some pre-trends are slightly off, particularly in areas such as vandalism, disorderly conduct, and poor health.
 

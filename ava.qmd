@@ -10,6 +10,7 @@ The authors conducted a decade-long difference-in-differences analysis of the im
 library(tidyverse)
 library(here)
 library(fixest)
+library(gtsummary)
 ```
 
 ### Read in data
@@ -57,9 +58,7 @@ Years: 1999–2008 (10 years). Lots: 17,744 total (4,436 treated; 13,308 matched
 
 **Regression Model**\
 $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}
-$$
-
-Where each regression model included different health or safety outcome of interest, Yit:
+$$ \$\$ Where each regression model included different health or safety outcome of interest, Yit:
 
 -   i- number of vacant lots
 
@@ -89,17 +88,16 @@ Where each regression model included different health or safety outcome of inter
 
 ```{r}
 # Lot-level average outcome during pre-greening period
-sim_data <- sim_data |>
-  group_by(lot_id) |>
-  mutate(pre_mean = mean(crime_gun_assaults[post == 0])) |>
-  mutate(rel_year = year - greening_year) %>% 
+sim_data <- sim_data %>% 
+  group_by(lot_id) %>% 
+  mutate(pre_mean = mean(crime_gun_assaults[post == 0])) %>% 
   ungroup() 
 ```
 
 ```{r}
 # Create model based on equation
 model <- feols(
-  crime_gun_assaults ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
+  crime_gun_assaults ~ post + treated_status + post:treated_status +     # B1, B2, B3
                        section:pre_mean +   # B5
                        area_sqft + vacant_lot_density +    # lot covariates
                        unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
@@ -109,9 +107,6 @@ model <- feols(
   data = sim_data,
   cluster = ~ contig_group_id # cluster ID
 )
-
-iplot(model, xlab = "Greening",
-      ylab = "Gun assaults")
 ```
 
 ```{r}
@@ -119,9 +114,9 @@ summary(model)
 ```
 
 ```{r}
-# Create model based on equation
+# Create model based on equation- feols
 model <- feols(
-  health_ ~ i(rel_year, treated_status, ref = -1) +     # B1, B2, B3
+  health_high_chol ~ post + treated_status + post:treated_status +       # B1, B2, B3
                        section:pre_mean +   # B5
                        area_sqft + vacant_lot_density +    # lot covariates
                        unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
@@ -131,9 +126,25 @@ model <- feols(
   data = sim_data,
   cluster = ~ contig_group_id # cluster ID
 )
+```
 
-iplot(model, xlab = "Greening",
-      ylab = "High Chol")
+```{r}
+summary(model)
+```
+
+```{r}
+# Using lm
+model2 <- lm(
+  crime_gun_assaults ~ post + treated_status + post:treated_status +     # B1, B2, B3
+                       section:pre_mean +   # B5
+                       area_sqft + vacant_lot_density +    # lot covariates
+                       unemployed_sqmi + college_sqmi +    # demographics (baseline covariates)
+                       income_sqmi + black_sqmi +
+                       hispanic_sqmi + poverty_sqmi + median_age,                    # B4- dummy variables section x yr 
+  data = sim_data
+)
+
+summary(model2)
 ```
 
 ### 3. Critical Evaluation
