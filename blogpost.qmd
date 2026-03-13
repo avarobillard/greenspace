@@ -59,13 +59,13 @@ sim_data <- read_csv(here("data", "branas2011_simulated_panel.csv")) %>%
 
 #### Key variables and data structure
 
-In this data, **each row** represents a vacant lot x year observation (i.e. L00001 x 2008). The **unit of analysis** of this study is vacant lot x year.
+In this data, **each row** represents a vacant lot-by-year observation (i.e. L00001 x 2008). The **unit of analysis** of this study is vacant-lot-by-year.
 
 The **treatment variable** represented vacant lots greened by the PHS program, during which there was a consistent treatment protocol of removing trash and debris, grading the land, planting grass and trees to create a park-like setting, and installing low wooden posts around each lot's perimeter to show that this lot was cared for. PHS returned multiple times each year for basic maintenance.
 
-The **control variable** represented control lots from 2 eligibility pools were randomly selected and matched to treated lots at a 3:1 ratio by city section - vacant lots eligible to serve as controls included only those that had never been greened from 1999 to 2008 but could have been chosen by the PHS for greening.
+The **control variable** represented control lots from 2 eligibility pools were randomly selected and matched to treated lots at a 3:1 ratio by city section - vacant lots eligible to serve as controls included only those that had never been greened from 1999 to 2008 but could have been chosen by the PHS for greening. A 3:1 ratio was used because at most 3 control lots per treated lot were available for random selection, without replacement, in all 4 sections of the city.
 
-The **outcome variables** were various health and safety outcomes. Health outcomes include high stress, high cholesterol, high blood pressure, low exercise, poor health status. Safety outcomes include gun assaults, robberies, disorderly, and illegal dumping.
+The **outcome variables** were various health and safety outcomes. Health outcomes include high stress, high cholesterol, high blood pressure, low exercise, poor health status. Safety outcomes include gun assaults, robberies, disorderly conduct, and illegal dumping.
 
 Overall, the difference-in-differences approach considers these health and safety outcomes occurring on and around vacant lots in the PHS program before and after they were treated, as compared with matched control vacant lots over the same time period.
 
@@ -75,7 +75,9 @@ Overall, the difference-in-differences approach considers these health and safet
 
 In the study, the health survey was conducted biennially while our simulated data contains annual values for this information.
 
-In terms of selecting the controls, there were initially two groups of randomly selected control lots as seen in Figure 1. The first pool limited eligible vacant lots to only those that had at least 1 open code violation. This control group was selected for the study's final findings as these were a better statistical match to greened lots (in terms of area, age, and unemployment).
+In terms of selecting the controls, there were initially two groups of randomly selected control lots as seen in Figure 1. The first pool limited eligible vacant lots to only those that had at least 1 open code violation. The second pool limited eligibility to vacant lots that had at least some portion of their area within a 660-foot buffer of a recreation center, K-12 school, park, playground, or commercial corridor. The first pool control group was selected for the study's final findings as these were a better statistical match to greened lots (in terms of area, age, and unemployment).
+
+The Northeast section was excluded because a trivial number of vacant lots (<0.2%) were greened there.
 
 ```{r greening-model}
 #| message: false
@@ -103,7 +105,7 @@ The study covered 10 years, from 1999–2008. There were 17,744 total lots in th
 $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}$$
 :::
 
-Where each regression model included different health or safety outcome of interest, $Yit$. $it$ is a unit of observation, or lot x year combination. The most key term here for our difference-in-differences analysis is $\beta_{3}(P_{it}\times R_{it})$, which captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
+Where each regression model included different health or safety outcome of interest, $Yit$. $it$ is a unit of observation, or lot x year combination. The key term here for our difference-in-differences analysis is $\beta_{3}(P_{it}\times R_{it})$, which captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
 
 Before replicating this model, we need to take a deeper look at our data.
 
@@ -337,6 +339,7 @@ safety_model <- feols(
 tidy(safety_model) %>% 
   filter(term == "post:treated_status") %>% 
     gt() %>% 
+  tab_header(title = "DiD Estimate: Gun Assaults") %>%
   fmt_number(decimals = 3) %>% 
   cols_label(term = "Term",
              estimate = "Estimate",
@@ -371,6 +374,7 @@ health_model <- feols(
 tidy(health_model) %>% 
   filter(term == "post:treated_status") %>%  
     gt() %>% 
+  tab_header(title = "DiD Estimate: High Cholesterol") %>%
   fmt_number(decimals = 3) %>% 
   cols_label(term = "Term",
              estimate = "Estimate",
