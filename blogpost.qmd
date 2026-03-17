@@ -234,7 +234,8 @@ ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
              axes = "margins",
              axis.labels = "margins") +
   labs(color = "Group",
-       y = "Mean outcome",
+       x = "Year",
+       y = "Mean Outcome",
        title = "Pre- and Post-Greening Outcome Trends",
        subtitle = "Dashed line = Average Greening Year in Treated Lots") +
   theme_minimal()
