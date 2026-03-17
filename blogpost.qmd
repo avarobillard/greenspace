@@ -186,6 +186,7 @@ Let's take a look at the trends throughout the study period our different outcom
 #| message: false
 #| warning: false
 #| fig-cap: "Mean outcome trends for treated and control lots over time. The dashed line indicates the average greening year; pre-treatment trends are used to assess the parallel trends assumption."
+#| fig-asp: 1.2
 
 # Change the data frame into long format
 did_long <- sim_data %>%
