@@ -71,7 +71,7 @@ Overall, the difference-in-differences approach considers these health and safet
 
 #### Notable data cleaning decisions
 
-'Point-based' models where crimes (geocoded events) and health outcomes (survey-based) are converted into per-lot measurements using spatial methods (kernel density, inverse-distance weighting) and then modeled in DID regressions- in our simulated data, these outcomes are stored directly as continuous per-lot-per-year values.
+'Point-based' models where crimes (geocoded events) and health outcomes (survey-based) are converted into per-lot measurements using spatial methods (kernel density, inverse-distance weighting) and then modeled in difference-in-differences (DiD) regressions - in our simulated data, these outcomes are stored directly as continuous per-lot-per-year values.
 
 In the study, the health survey was conducted biennially while our simulated data contains annual values for this information.
 
@@ -101,11 +101,13 @@ The study covered 10 years, from 1999–2008. There were 17,744 total lots in th
 
 #### **Regression Model**
 
+Branas et al. studied the effects of greening vacant lots on neighborhood health and safety outcomes in Philadelphia. The authors use a DiD regression framework to compare changes in outcomes over time between treated (greened) and control (not greened) lots. This method is appropriate because the greening intervention occurred at different locations and times rather than through random assignment. By comparing trends before and after treatment across both groups, the DiD approach helps isolate the causal impact of the greening program.
+
 ::: {style="font-size: 0.85em;"}
 $$Y_{it}=\beta_{0}+\beta_1P_{it}+\beta_2R_{it}+\beta_3(P_{it}\times R_{it})+\beta_{4}(S_{it}\times t)+ \beta_{5}(S_{it}\times M_{i})+\displaystyle\sum_{k=6}^{p}\beta_{k}X_{it}+\xi_{i}+\varepsilon_{it}$$
 :::
 
-Where each regression model included different health or safety outcome of interest, $Yit$. $it$ is a unit of observation, or lot x year combination. The key term here for our difference-in-differences analysis is $\beta_{3}(P_{it}\times R_{it})$, which captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
+Where each regression model included different health or safety outcome of interest, $Yit$. $it$ is a unit of observation, or lot-by-year combination. The key term here for our difference-in-differences analysis is $\beta_{3}(P_{it}\times R_{it})$, which captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
 
 Before replicating this model, we need to take a deeper look at our data.
 
@@ -132,15 +134,48 @@ baseline_lot <- sim_data %>%
   slice_min(year, n = 1, with_ties = FALSE) %>%
   ungroup()
 
+# baseline_lot %>%
+#   select(treated, area_sqft, median_age, unemployed_sqmi,
+#          college_sqmi, income_sqmi, black_sqmi, hispanic_sqmi, 
+#          poverty_sqmi,vacant_lot_density) %>%
+#   tbl_summary(by = treated, statistic = all_continuous() ~ "{mean} ({sd})") %>% 
+#   modify_caption("**Matching Data**") %>% 
+#   modify_header(label ~ "**Variable**") %>% 
+#   modify_spanning_header(c("stat_1", "stat_2") ~ "**Treatment**")
+
 # Select the necessary column for the quick table
 baseline_lot %>%
+  mutate(treated = factor(treated, 
+                          levels = c(0, 1), 
+                          labels = c("Control", "Treatment"))) %>%
   select(treated, area_sqft, median_age, unemployed_sqmi,
-         college_sqmi, income_sqmi, black_sqmi, hispanic_sqmi, 
-         poverty_sqmi,vacant_lot_density) %>%
-  tbl_summary(by = treated, statistic = all_continuous() ~ "{mean} ({sd})")
+         college_sqmi, income_sqmi, black_sqmi, hispanic_sqmi,
+         poverty_sqmi, vacant_lot_density) %>%
+  tbl_summary(by = treated,
+              statistic = list(all_continuous() ~ "{mean} ({sd})"),
+              label = list(area_sqft ~ "Lot Area (sq ft)",
+                           median_age ~ "Median Age",
+                           unemployed_sqmi ~ "Unemployment Density",
+                           college_sqmi ~ "College Education Density",
+                           income_sqmi ~ "Median Household Income",
+                           black_sqmi ~ "Black Population Density",
+                           hispanic_sqmi ~ "Hispanic Population Density",
+                           poverty_sqmi ~ "Poverty Density",
+                           vacant_lot_density ~ "Vacant Lot Density")) %>%
+  modify_header(label ~ "**Characteristics**") %>%
+  as_gt() %>%
+  tab_header(
+    title = "Baseline Characteristics of Control and Treated Vacant Lots",
+    subtitle = "Philadelphia Vacant Lot Sample Prior to Greening Intervention") %>%
+  tab_spanner(label = "Study Groups",
+              columns = c(stat_1, stat_2)) %>%
+  tab_source_note(source_note = md(
+    "Note: Data include Philadelphia vacant lots from 1999–2008."))
 ```
 
-One of the key assumptions of a difference-in-differences analysis is parallel trends between the treatment and control groups during the pre-treatment period. This allows us to have a true causal estimate of any effect that greening vacant lots have on the various health and safety outcomes.
+The following table is a baseline lot, and neighborhood characteristics are measured prior to treatment. The study uses Philadelphia vacant lots from 1999–2008, with treated lots greened through the Pennsylvania Horticultural Society program and control lots drawn from eligible untreated vacant lots.
+
+One key assumption of a difference-in-differences analysis is that the treatment and control groups exhibit parallel trends in the pre-treatment period. If this assumption holds, the difference in post-treatment changes between the two groups can be interpreted as the causal effect of the greening intervention on the outcomes of interest.
 
 Let's take a look at the trends throughout the study period our different outcome variables!
 
@@ -150,6 +185,7 @@ Let's take a look at the trends throughout the study period our different outcom
 #| code-fold: true
 #| message: false
 #| warning: false
+#| fig-cap: "Mean outcome trends for treated and control lots over time. The dashed line indicates the average greening year; pre-treatment trends are used to assess the parallel trends assumption."
 
 # Change the data frame into long format
 did_long <- sim_data %>%
@@ -190,18 +226,20 @@ ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
   geom_vline(xintercept = treat_year, linetype = "dashed") +
   scale_color_manual(values = c("0" = "#6F4E37", "1" = "#50C878"),
                    labels = c("0" = "Control", "1" = "Treated")) +
+  scale_x_continuous(breaks = c(2000, 2004, 2008)) +
   facet_wrap(~outcome, scales = "free_y",
-             labeller = as_labeller(facet_names)) +
+             ncol = 2,
+             labeller = as_labeller(facet_names),
+             axes = "margins",
+             axis.labels = "margins") +
   labs(color = "Group",
        y = "Mean outcome",
-       title = "Difference-in-Differences across outcomes",
-       subtitle = "Dashed line = average greening year among treated lots") +
-  theme_minimal() +
-  theme(axis.ticks.x = element_blank(),
-        axis.text.x = element_blank())
+       title = "Pre- and Post-Greening Outcome Trends",
+       subtitle = "Dashed line = Average Greening Year in Treated Lots") +
+  theme_minimal()
 ```
 
-It appears that some outcome variables meet the parallel trends assumption better than others, so we will select one health and one safety outcome that appears to have the best parallel trends pre-treatment.
+The figure above presents pre- and post-treatment trends for all outcomes and allows us to assess the parallel trends assumption using approximately five pre-treatment periods (1999–2004). Among safety outcomes, gun assaults appear to best satisfy the parallel trends assumption, as both treated and control groups follow a similar downward trajectory prior to greening, whereas outcomes such as disorderly conduct and vandalism show more divergence or fluctuation between groups before treatment, suggesting potential violations. Among health outcomes, *high cholesterol* shows relatively parallel pre-treatment trends, with both groups increasing at a similar rate, whereas *high stress* and *low exercise* show noticeable differences in trends prior to treatment. Overall, *gun assaults* and *high cholesterol* show the most consistent pre-treatment patterns and are therefore the most appropriate outcomes for the DiD analysis.
 
 #### Selected outcomes for models
 
@@ -209,6 +247,7 @@ It appears that some outcome variables meet the parallel trends assumption bette
 #| code-fold: true
 #| message: false
 #| warning: false
+#| fig-cap: "The figure shows raw mean outcomes for treated and control lots over time. Although the dashed line highlights the average treatment timing, other city-wide factors may also change over time. The difference-in-differences regression accounts for these common time trends when estimating the treatment effect."
 
 # Reshape data into long format so we can plot multiple outcomes using the same structure
 did_means <- sim_data %>%
@@ -229,23 +268,25 @@ ggplot(did_means, aes(x = year, y = mean_value, color = factor(treated))) +
   geom_line(linewidth = 0.9) +
   geom_point(size = 1.8) +
   geom_vline(xintercept = treat_year, linetype = "dashed") +
-  facet_wrap(~ outcome, scales = "free_y",
+  facet_wrap(~outcome, scales = "free_y",
              labeller = as_labeller(facet_names)) +
   scale_color_manual(values = c("0" = "#6F4E37", "1" = "#50C878"),
                    labels = c("0" = "Control", "1" = "Treated")) +
-  labs(color = "Treated", y = "Mean outcome",
-       title = "Difference-in-Differences Mean Trends",
+  labs(color = "Treated", x = "Year", y = "Mean Outcome",
+       title = "Pre- and Post-Treatment Trends in Gun Assaults and High Cholesterol",
        subtitle = "Dashed line = Average Greening Year in Treated Lots") +
   theme_minimal()
 ```
 
-Now that we have analyzed the parallel trends assumption for our outcome variables, gun assaults and high cholesterol, let's run some models!
+Now that we have visually analyzed the parallel trends assumption for our outcome variables, gun assaults and high cholesterol, let's run some models!
 
 #### Regression to estimate treatment effect
 
-Let's use the `fixest` package to run a model with i(), a syntax for including a period, treatment, and reference in a DiD.
+Let's use the `{fixest}` package to run a model with `i()`, a syntax for including a period, treatment, and reference in a DiD.
 
-Here, i(rel_year, treated_status, ref = -1) creates an interaction between treatment status and each year relative to greening, producing a separate coefficient for each year. The year before greening (rel_year = -1) is excluded as the reference period.
+Here, `i(rel_year, treated_status, ref = -1)` creates an interaction between treatment status and each year relative to greening, producing a separate coefficient for each year. The year before greening (`rel_year = -1`) is excluded as the reference period.
+
+In addition to the treatment indicators, we include several covariates to control for observable differences across vacant lots and neighborhoods. These include *lot characteristics*, such as lot area and local vacant lot density, as well as baseline *neighborhood characteristics*, including unemployment, education, income, racial composition, poverty, and median age. We also include an interaction between section and pre-treatment mean outcomes to account for baseline differences across locations, and section-by-year fixed effects to control for time-varying shocks common within each city section. Standard errors are clustered at the contiguous lot group level to account for spatial correlation.
 
 Let's do our safety outcome first.
 
@@ -271,7 +312,7 @@ iplot(model1, xlab = "Greening",
       main = "Event Study: Gun Assaults")
 ```
 
-This plot supports the parallel trends assumption, showing similar pre-treatment trends between treated and control lots before greening, followed by a clear reduction in gun assaults immediately after treatment.
+The figure above presents the *event-study* estimates from the DiD model, where each coefficient represents the estimated effect of greening on *gun assaults* relative to the year immediately before treatment. The pre-treatment coefficients are close to zero and relatively stable, supporting the parallel trends assumption. Following greening, the coefficients become negative and statistically significant, indicating a reduction in *gun assaults* in treated lots relative to control lots. This pattern suggests that the greening intervention is associated with a decline in *gun assaults* after implementation.
 
 Next, let's look at our health outcome.
 
@@ -297,7 +338,7 @@ iplot(model2, xlab = "Greening",
       main = "Event Study: High Cholestrol")
 ```
 
-This plot shows a slightly less consistent trend pre-treatment and a less clear reduction in high cholesterol post-treatment.
+The figure above presents the *event-study* estimates for *high cholesterol* from the DiD model, with each coefficient interpreted relative to the pre-treatment period. The pre-treatment coefficients are generally small and stable, providing some support for the parallel trends assumption, although they exhibit slightly more variation than the safety outcome. After treatment, the coefficients do not show a clear or consistent pattern, and most estimates are imprecise, suggesting no strong evidence of a systematic greening effect on *high cholesterol*.
 
 ```{r}
 #| code-fold: true
@@ -387,48 +428,132 @@ Our model output for the gun assaults outcome (-7.661) was significant and simil
 
 ### 3. Critical Evaluation
 
-After running our models, we will reflect on our findings in the context of the study design.
+#### A. Causal Identification
 
-#### Causal identification: Is the identification strategy credible? What would have to be true for the estimates to be causal?
+This study presents a partially credible identification strategy, with several important caveats.
 
-The study and its replication indicate that the causal relationship appears reasonably credible overall. However, some measurements show less parallelism and lack significant statistical relevance in the post-treatment phase.
+The study uses a matched Difference-in-Differences (DID) design comparing treated vacant lots to matched untreated lots over time. Identification relies on both temporal variation (pre vs. post greening) and cross-sectional variation (treated vs. control lots). However, a formal statistical pre-trend test was not conducted, which weakens the empirical support for the parallel trends assumption.
 
-The author also breaks down the analysis by regions in Philadelphia, revealing that some areas and categories seem to be more effective than others. This likely reflects local characteristics of the urban environment, such as neighborhood structure, density, and how residents actually use the greened spaces.
+The design is more convincing for crime outcomes than for health outcomes. Crime data come from administrative records measured annually at a fine spatial resolution, which aligns well with the DID framework. In contrast, health outcomes rely on modeled survey aggregates derived from biennial surveys. This creates potential timing misalignment between treatment exposure and outcome measurement and introduces additional measurement noise, weakening causal interpretation.
 
-In the results, crime outcomes appear stronger and more consistent, while health outcomes are relatively weaker. This makes sense, as health is influenced by many factors beyond the intervention. The study suggests that greening can clearly reduce crime, while the evidence for health improvements is less compelling.
+A key strength is the matching of treated lots to eligible but untreated parcels, which improves comparability and reduces observable selection bias. However, treatment assignment remains quasi-experimental rather than random. Lot selection may still reflect unobserved neighborhood dynamics such as community capacity, redevelopment pressure, baseline safety trends, or political prioritization.
 
-Some outcomes are more challenging to interpret. For instance, reports of disorderly incidents increase before treatment and even more after treatment. One possibility is that greening attracts more people to the area, leading to increased foot traffic and consequently more reported disorder, even if serious crime decreases. Meanwhile, outcomes related to low exercise seem to show more improvement.
+The one-to-one matching design improves internal comparability but also implies that estimates depend heavily on the quality of the matching procedure. If important unobserved differences remain between matched pairs, DID estimates may still reflect residual selection bias rather than purely treatment effects.
 
-#### Statistical assumptions: Are key assumptions tested or defended? Do you find the evidence convincing?
+**Overall Assessment**
 
-We observed that some pre-trends are slightly off, particularly in areas such as vandalism, disorderly conduct, and poor health.
+Overall, the identification strategy is moderately credible for crime outcomes, with strong outcome measurement and spatial timing that aligns well with the treatment. The causal interpretation is less convincing for health outcomes, where measurement limitations, timing misalignment, and potential residual selection bias introduce greater uncertainty.
 
-However, Our replicated trends mostly show parallel patterns for gun assaults, cholesterol levels, and several other outcomes. The event-study replication assesses the parallel trends assumption by checking whether treated and control areas had similar trends before the treatment took place.
+#### B. Assumptions
 
-Overall, the evidence supporting the statistical assumptions is generally convincing, for them mostly fits the assumptions of parallel trends.
+Usually, the assumptions of DID include:
 
-#### Sampling & external validity: Who is in the sample? To whom can results be generalized?
+* parallel trends between the treated and control groups 
+* exogeneity of treatment assignment
+* no spillovers (SUTVA)
+* correct model specification 
 
-The sample consists of vacant lots in Philadelphia that were either treated with a greening intervention or used as control sites.
+They are discussed as follows:
 
-These results might be applicable to similar greening programs. Urban contexts with similar vacancy patterns could provide helpful insights, but we believe it is challenging to generalize the results beyond these types of cities.
+*Parallel Trends*
 
-While there are some indications of effects, such as a reduction in gun violence and improvements in cholesterol and blood pressure, at 95% of the confidence intervals for the estimated treatment effects across all health outcomes cross zero. Additionally, the findings related to crime are somewhat mixed.
+The DID framework requires that the treated and control lots follow similar pre-treatment trends.
 
-This suggests that while there may be some positive effects, the findings are not definitive and should be interpreted cautiously.
+The paper presents descriptive pre-period comparisons but does not conduct a formal statistical pre-trend test (e.g., an event-study or a joint significance test of pre-treatment coefficients). While crime outcomes appear visually consistent with parallel trends, health outcomes show greater variability and weaker support for this assumption.
 
-#### Measurement: Are the outcome and treatment variables measured accurately and without systematic bias?
+A stronger design would test parallel trends within each Philadelphia section and for each outcome, rather than relying primarily on pooled estimates. Without this, the DID estimates risk appearing mechanically generated rather than empirically validated (i.e., estimates appear without clear evidence of identifying variation).
 
-Crime outcomes are likely measured relatively consistently because they rely on official crime reports. However, some outcomes such as vandalism and disorderly incidents may also reflect increased activity in the area. If greening attracts more people to use the space, there could be more opportunities for these events to occur or to be reported. There may also be some reporting bias depending on frequency of activities.
+Assessment: Parallel trends appear plausible for crime outcomes but are insufficiently demonstrated overall, particularly for health outcomes where pre-trend evidence is weak.
 
-However, we think that health outcomes are more difficult to interpret. The study itself discusses that health effects are weaker and harder to detect. It is difficult to clearly link greening directly to health outcomes because many other factors affect health.
+**Exogeneity of Treatment Assignment**
 
-For example, self-reported poor health and high stress is a relatively weak measure. Blood pressure and cholesterol are more biologically direct indicators, but they can still be affected by many external influences. These outcomes are still influenced by factors such as diet, lifestyle, and access to healthcare, making it harder to attribute changes directly to the greening intervention.
+Treatment assignment must be independent of potential outcomes conditional on controls. The authors attempt to address this through matching and timing tests, but the greening program was implemented through a real policy process rather than random allocation. The matching procedure is not fully transparent, and the quality of balance on unobservables remains unclear.
 
-#### Other limitations: Anything else that affects how much weight you would put on the study’s conclusions?
+Potential sources of *endogeneity* example:
 
-The separation of results by regions in Philadelphia still seems spectacle to us. While it makes sense to some extent since neighborhood context could influence how greening interventions are effective, the models already account for socioeconomic factors such as income and demographic variables. Therefore, it's not entirely clear how much additional insight the regional split provides.
+* involvement of the community in lot improvement varies
+* neighborhoods are already improving or worsening trajectories for other social or policy reasons
+* redevelopment or gentrification pressure
+* policing efforts or administrative selection processes
+* areas with stronger maintenance capacity
 
-It feels somewhat like a stretch to interpret the data this way, although it's still plausible that neighborhood context affects the effectiveness of the interventions.
+These mechanisms could violate *exogeneity* if treated lots were systematically located in areas already experiencing improvement.
 
-Overall, the study offers evidence that greening vacant lots can reduce certain types of crime and improve health to some extent. However, the evidence regarding health outcomes is weaker, and conclusions should be drawn carefully. We believe that has to do with behavioural choices of health and lifestyle. Because of these factors, while the findings are suggestive and interesting, they should still be interpreted with caution.
+Assessment: Exogeneity is partially addressed but not clearly established. Residual selection bias due to endogenous program placement remains a credible concern.
+
+**Spillover / SUTVA**
+
+SUTVA requires that the treatment of one unit does not affect the outcomes of others.
+
+Spillovers are plausible because greening may change neighborhood visibility, informal surveillance, pedestrian activity, or crime displacement. The paper argues that spillovers are limited because the treated and control lots were, on average, 1.63 miles apart.
+
+However, this argument primarily addresses contamination of the control group. There are many possible ways that could hypothetically create spillovers:
+
+* Spatial displacement of crime (interference across units): If greening reduces crime locally but shifts it to nearby untreated areas, estimated effects may reflect redistribution rather than net crime reduction.
+* Localized treatment externalities (positive neighborhood spillovers): Improvements in one lot may increase perceived safety or collective efficacy in nearby blocks, meaning untreated units may partially receive treatment exposure.
+
+Assessment: Spillovers are likely limited for identification but not formally tested.
+
+**Model Specification**
+
+Correct specification requires appropriate spatial scale and controls.
+
+A key concern is spatial scale. Treatment effects, particularly on health outcomes, likely operate at very local distances (e.g., 100-500 meters) through mechanisms such as walking exposure, stress reduction, or perceived safety. Aggregating outcomes to the census tract level may dilute these effects and bias estimates toward zero due to spatial exposure misclassification.
+
+This concern is consistent with spatial causal designs in the related literature (for example, distance-gradient designs such as Stokes' wind turbine studies), where treatment intensity is modeled as a function of distance rather than as a binary exposure.
+
+Relatedly, small-scale spatial behavioral mechanisms suggest health responses may occur primarily within walking distance of treated lots. If exposure is defined only at the tract level, this may misclassify true treatment exposure and attenuate estimated effects.
+
+Regional heterogeneity across Philadelphia sections further suggests that a single average treatment effect on the treated (ATT) may mask meaningful variation in treatment effects across neighborhoods.
+
+Assessment: Model specification is reasonable but likely too spatially coarse, potentially attenuating treatment estimates and masking meaningful spatial heterogeneity.
+
+#### C. Other Limitations
+
+**Measurement Validity**
+
+The primary limitation concerns the quality of health outcome measurement. Health indicators are derived from a biennial telephone survey (~5,000 respondents per wave, 30.7% response rate) using repeated cross-sections rather than longitudinal individuals. Outcomes are further constructed using tract-level small-area estimation and interpolation across survey years. These features introduce potential nonresponse bias, substantial measurement noise, post-processing distortion, and temporal misalignment between treatment exposure and outcome observation, all of which likely attenuate estimated treatment effects. In contrast, crime outcomes are based on administrative records with higher spatial and temporal precision, making them substantially more reliable.
+
+Assessment: Health results should be interpreted cautiously due to measurement error and limited statistical precision.
+
+**External Validity**
+
+Philadelphia represents a legacy city characterized by extensive vacancy from deindustrialization, concentrated poverty, parcel-scale abandonment, and an established low-cost greening intervention. This makes the study particularly informative for cities with similar urban vacancy dynamics (e.g., Detroit, Baltimore, Cleveland). The intervention also aligns with Jane Jacobs’ theory of “eyes on the street,” in which improvements to the physical environment can increase informal surveillance and neighborhood activity, providing a plausible behavioral mechanism for crime reduction. However, results may not generalize to cities with lower vacancy rates, suburban environments, different urban morphology, or interventions involving large-scale parks rather than parcel-level greening.
+
+Assessment: External validity is *strong within legacy-city contexts* but limited outside them.
+
+**Interpretation of Effect Strength**
+
+Based on the simulated replication results, several health estimates have confidence intervals that cross zero, indicating limited statistical precision rather than definitive null effects. While the original paper does not formally test this uncertainty, the replication suggests the study may be underpowered to detect modest health impacts, given the noisier measurement structure of the health data.
+
+Crime findings are also not uniformly consistent across categories. While gun assaults show the most robust reductions, other crime categories show weaker or mixed patterns, suggesting the intervention may shift neighborhood activity patterns rather than uniformly reduce all forms of disorder.
+
+Assessment: Evidence is strongest for *gun violence reduction*, weaker and more uncertain for health outcomes.
+
+**Survey Response and Timing**
+
+Health data are collected only every two years, which may smooth or delay detection of treatment effects. The relatively low response rate also raises concerns about representativeness, despite the use of weighting and tract-level estimation techniques. Because the paper provides limited detail on how these adjustments address potential bias, uncertainty remains regarding the precision of health estimates.
+
+Assessment: Survey structure and construction likely reduce statistical power and lead to imprecise estimates of health effects. 
+
+#### D. Future Research Directions
+
+Several improvements could strengthen causal inference and improve measurement precision.
+
+**Measurement Improvements**
+
+Future studies could leverage advances in health and behavioral measurement technologies that were not widely available during the study period (1999–2008). These include wearable activity trackers, mobility and GPS exposure data, direct biometric measurements (e.g., blood pressure monitoring), and passive sensing technologies. These approaches could reduce reliance on self-reported outcomes and improve statistical power by reducing measurement error.
+
+**Causal Design Improvements**
+
+Future research could also strengthen identification by using more spatially precise exposure definitions, such as distance-based treatment intensity measures rather than binary tract-level exposure indicators. Related spatial causal designs (e.g., distance-gradient approaches such as the Stokes windfarm study) suggest this may better capture localized treatment effects. Additional improvements include formal event-study designs to test for parallel trends, heterogeneous treatment-effect analysis across neighborhood characteristics, and explicit testing of spillover radii to distinguish local effects from neighborhood diffusion.
+
+**Conceptual Improvements**
+
+Future work should explicitly test whether health responses operate at small-neighborhood scales, since behavioral responses to greening interventions likely occur within short walking distances rather than administrative boundaries. Understanding the spatial scale of response is critical for correctly specifying treatment exposure.
+
+**Overall Conclusion**
+
+Overall, the study provides reasonably strong causal evidence that vacant lot greening reduces gun violence, supported by a credible DID framework and relatively high-quality administrative crime data. In contrast, evidence for health improvements remains suggestive rather than definitive, largely due to noisier survey-based measurement, limited statistical precision, and potential spatial misalignment between treatment exposure and outcome measurement.
+
+Taken together, the results suggest that greening interventions may produce meaningful public safety benefits, while the evidence for health impacts should be interpreted as preliminary. Future research incorporating more precise health measurement, spatially refined exposure definitions, and stronger causal validation tests would help clarify whether the weaker health findings reflect truly modest effects or limitations of the empirical design.
