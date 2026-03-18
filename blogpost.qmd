@@ -26,7 +26,7 @@ Reference: Greening Vacant Lots to Reduce Violent Crime: A Randomised Controlled
 
 [^1]: Available from: https://www.researchgate.net/figure/Before-and-after-vacant-lot-greening-by-the-Pennsylvania-Horticulture-Society_fig1_230631944 \[accessed 6 Mar 2026\]
 
-In this blog post, we will replicate the Branas et al.[^2] study with simulated data to dive further into the causal claims.
+In this blog post, we will walk through a replication of the difference-in-differences analysis within the Branas et al.[^2] study, including looking into the study design and data, running statistical analyses, checking assumptions, and discussing causal inferences made about the benefits of urban greening. This will be done using simulated data, allowing us to focus largely on the study replication rather than data wrangling. 
 
 [^2]: Available from: https://pmc.ncbi.nlm.nih.gov/articles/PMC3224254/ \[accessed 6 Mar 2026\]
 
@@ -354,7 +354,7 @@ sim_data <- sim_data %>%
   ungroup() 
 ```
 
-Now, let's run some models just using an interaction term (post:treated) and look at our key term from the study's model, $\beta_{3}(P_{it}\times R_{it})$, as this captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots.
+Now, let's run some models just using an interaction term (post:treated) and look at our key term from the study's model, $\beta_{3}(P_{it}\times R_{it})$, as this captures the additional change in outcomes for treated lots after greening relative to the pre-to-post change in control lots. While the previous models were beneficial for testing parallel trends over the years of the study and showing the treatment effect of greening over time, the standard interaction term provides a single, interpretable number to report and compare to the study's table of results. 
 
 ```{r}
 #| message: false
@@ -426,7 +426,7 @@ tidy(health_model) %>%
              p.value = "p-value")
 ```
 
-Our model output for the gun assaults outcome (-7.661) was significant and similar to the study findings for all 4 sections of Philadelphia (-7.90). Our model output for high cholesterol (0.061) was lower than the study findings (0.76), and insignificant. The study discussed these outcomes, stating that gun assaults were significantly reduced citywide after the greening treatment. They state that the consistent increase in high cholesterol related to the greening of vacant lots was surprising and runs counter to prior work. 
+Our model output for the gun assaults outcome (-7.661) was significant, suggesting that after greening, treated lots experienced approximately 7.7 fewer gun assaults per square mile per year compared to control lots relative to the pre-treatment period. This was similar to the study findings for all 4 sections of Philadelphia (-7.90). Our model output for high cholesterol (0.061) was insignificant and lower than the study findings (0.76), possibly due to the limitations of replicating the health survey in the simulated data. The study discussed these outcomes, stating that gun assaults were significantly reduced citywide after the greening treatment and that the consistent increase in high cholesterol related to the greening of vacant lots was surprising and runs counter to prior work. 
 
 ### 3. Critical Evaluation
 
